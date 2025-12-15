@@ -52,7 +52,7 @@ type Config struct {
 	YAMLConfig    *YAMLConfig
 }
 
-// extractSubdomain extracts the subdomain/hostname from a URL
+// extractSubdomain extracts the subdomain/hostname from a URL and includes port if non-standard
 func extractSubdomain(targetURL string) (string, error) {
 	// Add scheme if missing
 	if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
@@ -65,10 +65,25 @@ func extractSubdomain(targetURL string) (string, error) {
 		return "", fmt.Errorf("invalid URL: %v", err)
 	}
 
-	// Get hostname (subdomain.domain.com)
+	// Get hostname (subdomain.domain.com or IP)
 	hostname := parsedURL.Hostname()
 	if hostname == "" {
 		return "", fmt.Errorf("could not extract hostname from URL")
+	}
+
+	// Get port
+	port := parsedURL.Port()
+
+	// Include port in directory name if it's non-standard
+	// Standard ports: 80 for http, 443 for https
+	if port != "" {
+		scheme := parsedURL.Scheme
+		isStandardPort := (scheme == "http" && port == "80") || (scheme == "https" && port == "443")
+
+		if !isStandardPort {
+			// Replace colon with underscore to avoid filesystem issues
+			hostname = hostname + "_" + port
+		}
 	}
 
 	return hostname, nil

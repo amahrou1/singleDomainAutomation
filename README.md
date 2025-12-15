@@ -255,19 +255,28 @@ dirsearch:
 The tool supports three input modes for maximum flexibility:
 
 #### 1. Single Domain Mode (`-d` flag)
-Scan a single subdomain:
+Scan a single subdomain or IP address:
 ```bash
 subdomain-recon -d https://api.example.com
+subdomain-recon -d https://104.16.58.31
+subdomain-recon -d https://104.16.58.31:8443
 ```
 
 #### 2. Multiple Domains Mode (`-l` flag)
-Scan multiple subdomains from a file:
+Scan multiple subdomains/IPs from a file:
 
-**Create a file** (`subdomains.txt`):
+**Create a file** (`targets.txt`):
 ```
+# Subdomains
 https://api.example.com
 https://admin.example.com
 https://dev.example.com
+
+# IP addresses
+https://104.16.58.31
+https://104.16.58.31:8443
+http://192.168.1.1:8080
+
 # Comments are supported
 https://staging.example.com
 ```
@@ -320,6 +329,51 @@ subdomain-recon -v
 ```bash
 go run main.go -d https://subdomain.test.com
 go run main.go -l subdomains.txt
+```
+
+### IP Address Support
+
+The tool fully supports scanning IP addresses with or without ports:
+
+#### Supported Formats:
+```bash
+# IP without port (uses default: 443 for https, 80 for http)
+subdomain-recon -d https://104.16.58.31
+subdomain-recon -d http://192.168.1.1
+
+# IP with custom port
+subdomain-recon -d https://104.16.58.31:8443
+subdomain-recon -d http://192.168.1.1:8080
+```
+
+#### Directory Naming for IPs:
+
+**Standard ports (80 for HTTP, 443 for HTTPS):**
+- `https://104.16.58.31` → `./104.16.58.31/`
+- `https://104.16.58.31:443` → `./104.16.58.31/` (port omitted)
+- `http://192.168.1.1:80` → `./192.168.1.1/` (port omitted)
+
+**Non-standard ports:**
+- `https://104.16.58.31:8443` → `./104.16.58.31_8443/` (port included with underscore)
+- `http://192.168.1.1:8080` → `./192.168.1.1_8080/` (port included with underscore)
+
+This ensures that scanning the same IP on different ports creates separate directories.
+
+#### Mixed File Example:
+Your targets file can contain both subdomains and IPs:
+```
+# Subdomains
+https://api.example.com
+https://admin.example.com
+
+# IP addresses
+https://104.16.58.31
+https://104.16.58.31:8443
+https://10.0.0.5:9443
+
+# Mixed
+http://192.168.1.100:8080
+https://dev.example.com
 ```
 
 ## Command Details
