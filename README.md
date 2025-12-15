@@ -7,7 +7,10 @@ A modular Go-based reconnaissance tool focused on scanning a single subdomain fo
 - ✅ **YAML Configuration File** - Easy-to-edit `config.yaml` for all settings
 - ✅ **Dirsearch Module** - Advanced path fuzzing with 74+ file extensions
 - ✅ **Dual Content Discovery** - Run both Feroxbuster AND Dirsearch
+- ✅ **Multiple Input Modes** - Single domain (`-d`) or batch scan from file (`-l`)
+- ✅ **Subdomain-Based Directories** - Auto-organized output per subdomain
 - ✅ **Enhanced CLI** - Help flags, version info, custom config paths
+- ✅ **Sequential Batch Processing** - Scan multiple targets one by one
 - ✅ **Better Logging** - Module execution summary and success/failure tracking
 
 ## Features
@@ -247,29 +250,76 @@ dirsearch:
 
 ## Usage
 
-### Basic Usage
+### Input Modes
+
+The tool supports three input modes for maximum flexibility:
+
+#### 1. Single Domain Mode (`-d` flag)
+Scan a single subdomain:
 ```bash
-./subdomain-recon https://subdomain.test.com
+subdomain-recon -d https://api.example.com
 ```
 
-### With Custom Config
-```bash
-./subdomain-recon -c custom-config.yaml https://subdomain.test.com
+#### 2. Multiple Domains Mode (`-l` flag)
+Scan multiple subdomains from a file:
+
+**Create a file** (`subdomains.txt`):
+```
+https://api.example.com
+https://admin.example.com
+https://dev.example.com
+# Comments are supported
+https://staging.example.com
 ```
 
-### Show Help
+**Run the scan:**
 ```bash
-./subdomain-recon -h
+subdomain-recon -l subdomains.txt
 ```
 
-### Show Version
+The tool will process each subdomain **sequentially**:
+1. Scan `https://api.example.com` → Create `./api.example.com/` → Run all modules
+2. Scan `https://admin.example.com` → Create `./admin.example.com/` → Run all modules
+3. Scan `https://dev.example.com` → Create `./dev.example.com/` → Run all modules
+4. And so on...
+
+#### 3. Backward Compatible Mode (positional argument)
 ```bash
-./subdomain-recon -v
+subdomain-recon https://subdomain.test.com
 ```
 
-### Run Without Building
+### Usage Examples
+
+**Single domain scan:**
 ```bash
-go run main.go https://subdomain.test.com
+subdomain-recon -d https://api.test.com
+```
+
+**Multiple domains scan:**
+```bash
+subdomain-recon -l targets.txt
+```
+
+**With custom config:**
+```bash
+subdomain-recon -d https://api.test.com -c ~/.subdomain-recon.yaml
+subdomain-recon -l targets.txt -c ~/.subdomain-recon.yaml
+```
+
+**Show help:**
+```bash
+subdomain-recon -h
+```
+
+**Show version:**
+```bash
+subdomain-recon -v
+```
+
+**Run without building:**
+```bash
+go run main.go -d https://subdomain.test.com
+go run main.go -l subdomains.txt
 ```
 
 ## Command Details

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"subdomain-recon/config"
@@ -24,6 +26,8 @@ func main() {
 	showHelp := flag.Bool("h", false, "Show help message")
 	showVersion := flag.Bool("v", false, "Show version")
 	configPath := flag.String("c", ConfigFile, "Path to config file")
+	domain := flag.String("d", "", "Single domain to scan")
+	listFile := flag.String("l", "", "File containing list of domains (one per line)")
 
 	flag.Parse()
 
@@ -42,45 +46,142 @@ func main() {
 	// Print banner
 	printBanner()
 
-	// Get target from command line args
-	args := flag.Args()
-	if len(args) < 1 {
-		fmt.Println("❌ Error: Target URL is required\n")
-		printUsage()
-		os.Exit(1)
+	// Determine targets
+	var targets []string
+
+	if *domain != "" {
+		// Single domain mode
+		targets = []string{*domain}
+	} else if *listFile != "" {
+		// List file mode
+		var err error
+		targets, err = readTargetsFromFile(*listFile)
+		if err != nil {
+			utils.ErrorLogger.Printf("Failed to read targets from file: %v", err)
+			os.Exit(1)
+		}
+	} else {
+		// Check for positional argument (backward compatibility)
+		args := flag.Args()
+		if len(args) >= 1 {
+			targets = []string{args[0]}
+		} else {
+			fmt.Println("❌ Error: No target specified\n")
+			printUsage()
+			os.Exit(1)
+		}
 	}
 
-	target := args[0]
-
-	// Validate target
-	if target == "" {
-		utils.ErrorLogger.Fatal("Target cannot be empty")
+	// Validate we have targets
+	if len(targets) == 0 {
+		utils.ErrorLogger.Fatal("No targets found to scan")
 	}
 
-	utils.InfoLogger.Printf("Target: %s", target)
-
-	// Load configuration from YAML
-	cfg, err := config.LoadConfig(target, *configPath)
-	if err != nil {
-		utils.ErrorLogger.Printf("Failed to load configuration: %v", err)
-		utils.ErrorLogger.Printf("Make sure '%s' exists and is valid", *configPath)
-		os.Exit(1)
+	// Print targets summary
+	if len(targets) == 1 {
+		utils.InfoLogger.Printf("Target: %s", targets[0])
+	} else {
+		utils.InfoLogger.Printf("Targets: %d subdomains to scan", len(targets))
+		fmt.Println("\n[Targets List]")
+		fmt.Println("─────────────────────────────────────────────────────────")
+		for i, target := range targets {
+			fmt.Printf("  %d. %s\n", i+1, target)
+		}
+		fmt.Println("─────────────────────────────────────────────────────────")
 	}
-
-	utils.SuccessLogger.Printf("Configuration loaded from: %s", *configPath)
-
-	// Print configuration
-	printConfig(cfg)
 
 	// Start total timer
 	totalStart := time.Now()
 
-	// Run modules
-	runModules(cfg)
+	// Process each target sequentially
+	successCount := 0
+	failCount := 0
+
+	for i, target := range targets {
+		if len(targets) > 1 {
+			fmt.Println("\n╔═══════════════════════════════════════════════════════════╗")
+			fmt.Printf("║  Processing Target %d/%d: %-32s║\n", i+1, len(targets), truncateString(target, 32))
+			fmt.Println("╚═══════════════════════════════════════════════════════════╝\n")
+		}
+
+		// Load configuration for this target
+		cfg, err := config.LoadConfig(target, *configPath)
+		if err != nil {
+			utils.ErrorLogger.Printf("Failed to load configuration for %s: %v", target, err)
+			failCount++
+			continue
+		}
+
+		if i == 0 || len(targets) == 1 {
+			utils.SuccessLogger.Printf("Configuration loaded from: %s", *configPath)
+		}
+
+		// Print configuration for first target only (to avoid spam)
+		if i == 0 {
+			printConfig(cfg)
+		}
+
+		// Run modules for this target
+		targetSuccess := runModules(cfg)
+
+		if targetSuccess {
+			successCount++
+		} else {
+			failCount++
+		}
+
+		// Add separator between targets
+		if len(targets) > 1 && i < len(targets)-1 {
+			fmt.Println("\n" + strings.Repeat("─", 60))
+		}
+	}
 
 	// Print summary
 	totalDuration := time.Since(totalStart)
-	printSummary(totalDuration, cfg)
+	printFinalSummary(totalDuration, len(targets), successCount, failCount)
+}
+
+// readTargetsFromFile reads targets from a file (one per line)
+func readTargetsFromFile(filename string) ([]string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	var targets []string
+	scanner := bufio.NewScanner(file)
+	lineNum := 0
+
+	for scanner.Scan() {
+		lineNum++
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		targets = append(targets, line)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading file: %v", err)
+	}
+
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("no valid targets found in file")
+	}
+
+	return targets, nil
+}
+
+// truncateString truncates a string to maxLen characters
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }
 
 func printBanner() {
@@ -97,22 +198,48 @@ func printBanner() {
 }
 
 func printUsage() {
-	fmt.Println("Usage: ./subdomain-recon [options] <target>")
-	fmt.Println("\nExample:")
-	fmt.Println("  ./subdomain-recon https://subdomain.test.com")
-	fmt.Println("  ./subdomain-recon -c custom-config.yaml https://subdomain.test.com")
+	fmt.Println("Usage: subdomain-recon [options]")
 	fmt.Println("\nOptions:")
-	fmt.Println("  -h          Show help message")
-	fmt.Println("  -v          Show version")
-	fmt.Println("  -c <file>   Path to config file (default: config.yaml)")
+	fmt.Println("  -d <domain>     Scan a single domain")
+	fmt.Println("  -l <file>       Scan multiple domains from a file")
+	fmt.Println("  -c <file>       Path to config file (default: config.yaml)")
+	fmt.Println("  -h              Show help message")
+	fmt.Println("  -v              Show version")
+	fmt.Println("\nExamples:")
+	fmt.Println("  # Single domain")
+	fmt.Println("  subdomain-recon -d https://api.example.com")
+	fmt.Println("")
+	fmt.Println("  # Multiple domains from file")
+	fmt.Println("  subdomain-recon -l subdomains.txt")
+	fmt.Println("")
+	fmt.Println("  # With custom config")
+	fmt.Println("  subdomain-recon -d https://api.example.com -c custom.yaml")
+	fmt.Println("")
+	fmt.Println("  # Backward compatible (positional argument)")
+	fmt.Println("  subdomain-recon https://api.example.com")
 }
 
 func printHelp() {
 	printBanner()
 	printUsage()
 	fmt.Println("\nDescription:")
-	fmt.Println("  A modular reconnaissance tool for scanning a single subdomain.")
+	fmt.Println("  A modular reconnaissance tool for scanning single or multiple subdomains.")
 	fmt.Println("  Focuses on content discovery and path fuzzing.")
+	fmt.Println("\nInput Modes:")
+	fmt.Println("  1. Single Domain: Use -d flag to scan one subdomain")
+	fmt.Println("     Example: subdomain-recon -d https://api.test.com")
+	fmt.Println("")
+	fmt.Println("  2. Multiple Domains: Use -l flag with a file containing domains")
+	fmt.Println("     Example: subdomain-recon -l targets.txt")
+	fmt.Println("")
+	fmt.Println("     File format (one domain per line):")
+	fmt.Println("       https://api.example.com")
+	fmt.Println("       https://admin.example.com")
+	fmt.Println("       https://dev.example.com")
+	fmt.Println("       # Comments start with #")
+	fmt.Println("")
+	fmt.Println("  3. Backward Compatible: Provide domain as positional argument")
+	fmt.Println("     Example: subdomain-recon https://api.test.com")
 	fmt.Println("\nModules:")
 	fmt.Println("  1. Feroxbuster - Fast directory/file bruteforcing")
 	fmt.Println("  2. Dirsearch   - Advanced path fuzzing with multiple extensions")
@@ -125,7 +252,7 @@ func printHelp() {
 	fmt.Println("    - Enable/disable modules")
 	fmt.Println("    - Output file names")
 	fmt.Println("\nOutput:")
-	fmt.Println("  Results are saved to ./output/ directory:")
+	fmt.Println("  Results are saved to ./subdomain.target.com/ directory:")
 	fmt.Println("    - feroxbuster.txt - Feroxbuster results")
 	fmt.Println("    - dirsearch.txt   - Dirsearch results")
 	fmt.Println("\nFor more information, see README.md")
@@ -167,7 +294,7 @@ func printConfig(cfg *config.Config) {
 	fmt.Println("─────────────────────────────────────────────────────────\n")
 }
 
-func runModules(cfg *config.Config) {
+func runModules(cfg *config.Config) bool {
 	moduleCount := 0
 	successCount := 0
 	failCount := 0
@@ -180,7 +307,6 @@ func runModules(cfg *config.Config) {
 		if err != nil {
 			failCount++
 			utils.WarningLogger.Printf("Feroxbuster module completed with errors: %v", err)
-			utils.InfoLogger.Println("Continuing with next modules...")
 		} else {
 			successCount++
 			outputPath, _ := feroxbuster.GetOutputPath()
@@ -196,7 +322,6 @@ func runModules(cfg *config.Config) {
 		if err != nil {
 			failCount++
 			utils.WarningLogger.Printf("Dirsearch module completed with errors: %v", err)
-			utils.InfoLogger.Println("Continuing with next modules...")
 		} else {
 			successCount++
 			outputPath, _ := dirsearch.GetOutputPath()
@@ -204,25 +329,35 @@ func runModules(cfg *config.Config) {
 		}
 	}
 
-	// Future modules will be added here
-	// Module 3: Port Scanning
-	// Module 4: Technology Detection
-	// etc.
-
-	// Print module summary
+	// Print module summary for this target
 	fmt.Println("\n[Module Execution Summary]")
 	fmt.Println("─────────────────────────────────────────────────────────")
 	fmt.Printf("Total Modules:      %d\n", moduleCount)
 	fmt.Printf("Successful:         %d\n", successCount)
 	fmt.Printf("Failed/Skipped:     %d\n", failCount)
 	fmt.Println("─────────────────────────────────────────────────────────")
+
+	return failCount == 0
 }
 
-func printSummary(duration time.Duration, cfg *config.Config) {
+func printFinalSummary(duration time.Duration, totalTargets, successCount, failCount int) {
 	fmt.Println("\n╔═══════════════════════════════════════════════════════════╗")
 	fmt.Println("║                     Scan Complete                         ║")
 	fmt.Println("╚═══════════════════════════════════════════════════════════╝")
-	fmt.Printf("Total Execution Time: %s\n", duration)
-	fmt.Printf("\nResults Directory: %s\n", cfg.OutputDir)
-	fmt.Println("\n💡 Tip: Review the output files for discovered paths and files")
+
+	if totalTargets > 1 {
+		fmt.Println("\n[Overall Summary]")
+		fmt.Println("─────────────────────────────────────────────────────────")
+		fmt.Printf("Total Targets:      %d\n", totalTargets)
+		fmt.Printf("Successful:         %d\n", successCount)
+		fmt.Printf("Failed:             %d\n", failCount)
+		fmt.Println("─────────────────────────────────────────────────────────")
+	}
+
+	fmt.Printf("\nTotal Execution Time: %s\n", duration)
+
+	if successCount > 0 {
+		fmt.Println("\n✅ Results saved to subdomain-specific directories")
+		fmt.Println("💡 Tip: Review the output files for discovered paths and files")
+	}
 }

@@ -1,0 +1,4 @@
+# Test subdomains list
+https://api.example.com
+https://admin.example.com
+https://dev.example.com
