@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -50,6 +52,28 @@ type Config struct {
 	YAMLConfig    *YAMLConfig
 }
 
+// extractSubdomain extracts the subdomain/hostname from a URL
+func extractSubdomain(targetURL string) (string, error) {
+	// Add scheme if missing
+	if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
+		targetURL = "https://" + targetURL
+	}
+
+	// Parse URL
+	parsedURL, err := url.Parse(targetURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL: %v", err)
+	}
+
+	// Get hostname (subdomain.domain.com)
+	hostname := parsedURL.Hostname()
+	if hostname == "" {
+		return "", fmt.Errorf("could not extract hostname from URL")
+	}
+
+	return hostname, nil
+}
+
 // LoadConfig loads configuration from config.yaml and merges with target
 func LoadConfig(target string, configPath string) (*Config, error) {
 	// Read YAML file
@@ -70,10 +94,20 @@ func LoadConfig(target string, configPath string) (*Config, error) {
 		return nil, fmt.Errorf("invalid timeout format '%s': %v", yamlConfig.General.Timeout, err)
 	}
 
+	// Extract subdomain from target URL
+	subdomain, err := extractSubdomain(target)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract subdomain: %v", err)
+	}
+
+	// Create output directory path with subdomain name
+	// If output_dir is "./output", it becomes "./subdomain.test.com"
+	outputDir := "./" + subdomain
+
 	// Create config
 	cfg := &Config{
 		Target:     target,
-		OutputDir:  yamlConfig.General.OutputDir,
+		OutputDir:  outputDir,
 		Timeout:    timeout,
 		YAMLConfig: &yamlConfig,
 		EnableModules: map[string]bool{

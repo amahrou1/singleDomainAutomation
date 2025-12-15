@@ -99,6 +99,8 @@ Place your wordlist at `/root/myLists/all.txt` or configure a different path in 
 
 ## Installation
 
+### Basic Installation
+
 1. Clone or download this repository
    ```bash
    git clone <repository-url>
@@ -110,10 +112,78 @@ Place your wordlist at `/root/myLists/all.txt` or configure a different path in 
    go build -o subdomain-recon main.go
    ```
 
-3. Make it executable (if needed)
+3. Make it executable
    ```bash
    chmod +x subdomain-recon
    ```
+
+### System-Wide Installation (Ubuntu/Debian)
+
+To run the tool from anywhere on your system:
+
+**Option 1: Add to /usr/local/bin (Recommended)**
+```bash
+# Build the application
+go build -o subdomain-recon main.go
+
+# Move to /usr/local/bin
+sudo mv subdomain-recon /usr/local/bin/
+
+# Copy config file to your home directory
+cp config.yaml ~/.subdomain-recon.yaml
+
+# Verify installation
+subdomain-recon -v
+```
+
+**Option 2: Add to PATH via ~/.bashrc**
+```bash
+# Build the application
+go build -o subdomain-recon main.go
+
+# Create a bin directory in your home folder
+mkdir -p ~/bin
+
+# Move the binary
+mv subdomain-recon ~/bin/
+
+# Copy config to home directory
+cp config.yaml ~/.subdomain-recon.yaml
+
+# Add to PATH in .bashrc
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
+
+# Reload .bashrc
+source ~/.bashrc
+
+# Verify installation
+subdomain-recon -v
+```
+
+**Option 3: Create symbolic link**
+```bash
+# Build the application
+go build -o subdomain-recon main.go
+
+# Create symlink in /usr/local/bin
+sudo ln -s $(pwd)/subdomain-recon /usr/local/bin/subdomain-recon
+
+# Keep config.yaml in the project directory
+# Use -c flag to specify config path when running from other directories
+
+# Verify installation
+subdomain-recon -v
+```
+
+**Using with custom config from anywhere:**
+```bash
+# If you installed system-wide, you can use a config file from anywhere
+subdomain-recon -c /path/to/config.yaml https://target.com
+
+# Or use the default config from home directory
+mv config.yaml ~/.subdomain-recon.yaml
+subdomain-recon -c ~/.subdomain-recon.yaml https://target.com
+```
 
 ## Configuration
 
@@ -122,9 +192,13 @@ All settings are managed through `config.yaml`. Edit this file to customize:
 ### General Settings
 ```yaml
 general:
-  output_dir: "./output"    # Where to save results
+  output_dir: "./output"    # NOTE: This is now auto-generated from subdomain name
   timeout: "5h"             # Max timeout per module (5h, 30m, 2h30m)
 ```
+
+**Note:** The `output_dir` setting is now automatically determined from your target subdomain. For example:
+- Target: `https://api.example.com` → Output: `./api.example.com/`
+- Target: `https://admin.test.com` → Output: `./admin.test.com/`
 
 ### Enable/Disable Modules
 ```yaml
@@ -246,15 +320,53 @@ dirsearch -u https://subdomain.test.com \
 
 ## Output
 
-Results are saved in the `./output/` directory:
-- `feroxbuster.txt` - Feroxbuster discovered paths
-- `dirsearch.txt` - Dirsearch discovered paths
+### Automatic Directory Creation
+
+Results are automatically saved in a directory named after your target subdomain in the current working directory.
+
+**Examples:**
+```bash
+./subdomain-recon https://api.example.com
+# Creates: ./api.example.com/
+#   ├── feroxbuster.txt
+#   └── dirsearch.txt
+
+./subdomain-recon https://admin.target.com
+# Creates: ./admin.target.com/
+#   ├── feroxbuster.txt
+#   └── dirsearch.txt
+
+./subdomain-recon sub.test.com
+# Creates: ./sub.test.com/
+#   ├── feroxbuster.txt
+#   └── dirsearch.txt
+```
+
+### Output Files
+
+Each subdomain directory contains:
+- `feroxbuster.txt` - Feroxbuster discovered paths/files
+- `dirsearch.txt` - Dirsearch discovered paths/files
 
 Both files contain:
 - Discovered URLs/paths
 - HTTP status codes
 - Response sizes
 - Timestamps
+
+### Multiple Scans
+
+You can scan multiple subdomains and each will have its own directory:
+```bash
+./subdomain-recon https://api.target.com
+./subdomain-recon https://admin.target.com
+./subdomain-recon https://dev.target.com
+
+# Results:
+# ./api.target.com/feroxbuster.txt, dirsearch.txt
+# ./admin.target.com/feroxbuster.txt, dirsearch.txt
+# ./dev.target.com/feroxbuster.txt, dirsearch.txt
+```
 
 ## Error Handling
 

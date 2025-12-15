@@ -3,7 +3,7 @@
 
 # General Settings
 general:
-  output_dir: "./output"          # Directory to save all results
+  output_dir: "./output"          # NOTE: Ignored - output is saved to ./subdomain.target.com/
   timeout: "5h"                   # Maximum timeout for each module (e.g., 5h, 30m, 2h30m)
 
 # Module Enable/Disable
