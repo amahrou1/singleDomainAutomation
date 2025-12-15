@@ -1,39 +1,146 @@
 package config
 
-import "time"
+import (
+	"fmt"
+	"os"
+	"time"
 
-// Config holds the configuration for the recon tool
-type Config struct {
-	Target         string
-	OutputDir      string
-	WordlistPath   string
-	Timeout        time.Duration
-	EnableModules  map[string]bool
+	"gopkg.in/yaml.v3"
+)
+
+// YAMLConfig represents the structure of config.yaml
+type YAMLConfig struct {
+	General struct {
+		OutputDir string `yaml:"output_dir"`
+		Timeout   string `yaml:"timeout"`
+	} `yaml:"general"`
+
+	Modules struct {
+		Feroxbuster bool `yaml:"feroxbuster"`
+		Dirsearch   bool `yaml:"dirsearch"`
+	} `yaml:"modules"`
+
+	Feroxbuster struct {
+		Wordlist       string   `yaml:"wordlist"`
+		StatusCodes    []int    `yaml:"status_codes"`
+		OutputFile     string   `yaml:"output_file"`
+		Threads        int      `yaml:"threads"`
+		RecursionDepth int      `yaml:"recursion_depth"`
+		SkipSSL        bool     `yaml:"skip_ssl"`
+		NoState        bool     `yaml:"no_state"`
+	} `yaml:"feroxbuster"`
+
+	Dirsearch struct {
+		Wordlist    string   `yaml:"wordlist"`
+		Extensions  []string `yaml:"extensions"`
+		StatusCodes []int    `yaml:"status_codes"`
+		OutputFile  string   `yaml:"output_file"`
+		FullURL     bool     `yaml:"full_url"`
+		Recursive   bool     `yaml:"recursive"`
+		Threads     int      `yaml:"threads"`
+	} `yaml:"dirsearch"`
 }
 
-// NewConfig creates a new configuration with defaults
-func NewConfig(target string) *Config {
-	return &Config{
-		Target:        target,
-		OutputDir:     "./output",
-		WordlistPath:  "/root/myLists/all.txt",
-		Timeout:       5 * time.Hour, // 5 hours timeout
+// Config holds the runtime configuration for the recon tool
+type Config struct {
+	Target        string
+	OutputDir     string
+	Timeout       time.Duration
+	EnableModules map[string]bool
+	YAMLConfig    *YAMLConfig
+}
+
+// LoadConfig loads configuration from config.yaml and merges with target
+func LoadConfig(target string, configPath string) (*Config, error) {
+	// Read YAML file
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %v", err)
+	}
+
+	// Parse YAML
+	var yamlConfig YAMLConfig
+	if err := yaml.Unmarshal(data, &yamlConfig); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %v", err)
+	}
+
+	// Parse timeout
+	timeout, err := time.ParseDuration(yamlConfig.General.Timeout)
+	if err != nil {
+		return nil, fmt.Errorf("invalid timeout format '%s': %v", yamlConfig.General.Timeout, err)
+	}
+
+	// Create config
+	cfg := &Config{
+		Target:     target,
+		OutputDir:  yamlConfig.General.OutputDir,
+		Timeout:    timeout,
+		YAMLConfig: &yamlConfig,
 		EnableModules: map[string]bool{
-			"content_discovery": true,
+			"feroxbuster": yamlConfig.Modules.Feroxbuster,
+			"dirsearch":   yamlConfig.Modules.Dirsearch,
 		},
+	}
+
+	return cfg, nil
+}
+
+// FeroxbusterConfig holds configuration specific to Feroxbuster
+type FeroxbusterConfig struct {
+	Wordlist       string
+	StatusCodes    []string
+	OutputFile     string
+	Threads        int
+	RecursionDepth int
+	SkipSSL        bool
+	NoState        bool
+}
+
+// NewFeroxbusterConfig returns feroxbuster config from YAML
+func (c *Config) NewFeroxbusterConfig() *FeroxbusterConfig {
+	// Convert int status codes to strings
+	statusCodes := make([]string, len(c.YAMLConfig.Feroxbuster.StatusCodes))
+	for i, code := range c.YAMLConfig.Feroxbuster.StatusCodes {
+		statusCodes[i] = fmt.Sprintf("%d", code)
+	}
+
+	return &FeroxbusterConfig{
+		Wordlist:       c.YAMLConfig.Feroxbuster.Wordlist,
+		StatusCodes:    statusCodes,
+		OutputFile:     c.OutputDir + "/" + c.YAMLConfig.Feroxbuster.OutputFile,
+		Threads:        c.YAMLConfig.Feroxbuster.Threads,
+		RecursionDepth: c.YAMLConfig.Feroxbuster.RecursionDepth,
+		SkipSSL:        c.YAMLConfig.Feroxbuster.SkipSSL,
+		NoState:        c.YAMLConfig.Feroxbuster.NoState,
 	}
 }
 
-// ModuleConfig holds configuration specific to Content Discovery
-type ContentDiscoveryConfig struct {
+// DirsearchConfig holds configuration specific to Dirsearch
+type DirsearchConfig struct {
+	Wordlist    string
+	Extensions  []string
 	StatusCodes []string
 	OutputFile  string
+	FullURL     bool
+	Recursive   bool
+	Threads     int
 }
 
-// NewContentDiscoveryConfig returns default content discovery config
-func NewContentDiscoveryConfig(outputDir string) *ContentDiscoveryConfig {
-	return &ContentDiscoveryConfig{
-		StatusCodes: []string{"200", "403", "301", "302", "307"},
-		OutputFile:  outputDir + "/dirs.txt",
+// NewDirsearchConfig returns dirsearch config from YAML
+func (c *Config) NewDirsearchConfig() *DirsearchConfig {
+	// Convert int status codes to strings
+	statusCodes := make([]string, len(c.YAMLConfig.Dirsearch.StatusCodes))
+	for i, code := range c.YAMLConfig.Dirsearch.StatusCodes {
+		statusCodes[i] = fmt.Sprintf("%d", code)
+	}
+
+	return &DirsearchConfig{
+		Wordlist:    c.YAMLConfig.Dirsearch.Wordlist,
+		Extensions:  c.YAMLConfig.Dirsearch.Extensions,
+		StatusCodes: statusCodes,
+		OutputFile:  c.OutputDir + "/" + c.YAMLConfig.Dirsearch.OutputFile,
+		FullURL:     c.YAMLConfig.Dirsearch.FullURL,
+		Recursive:   c.YAMLConfig.Dirsearch.Recursive,
+		Threads:     c.YAMLConfig.Dirsearch.Threads,
 	}
 }

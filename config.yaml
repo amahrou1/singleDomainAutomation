@@ -1,0 +1,115 @@
+# Single Subdomain Reconnaissance Tool - Configuration File
+# Edit this file to customize your scan settings
+
+# General Settings
+general:
+  output_dir: "./output"          # Directory to save all results
+  timeout: "5h"                   # Maximum timeout for each module (e.g., 5h, 30m, 2h30m)
+
+# Module Enable/Disable
+modules:
+  feroxbuster: true               # Enable/disable feroxbuster content discovery
+  dirsearch: true                 # Enable/disable dirsearch fuzzing
+
+# Feroxbuster Configuration
+feroxbuster:
+  wordlist: "/root/myLists/all.txt"
+  status_codes:
+    - 200
+    - 403
+    - 301
+    - 302
+    - 307
+  output_file: "feroxbuster.txt"
+  threads: 50                     # Number of concurrent threads
+  recursion_depth: 0              # 0 = no recursion (-n flag)
+  skip_ssl: true                  # Skip SSL certificate verification (-k flag)
+  no_state: true                  # Don't save/load state
+
+# Dirsearch Configuration
+dirsearch:
+  wordlist: ""                    # Leave empty to use dirsearch default wordlist
+  extensions:
+    - php
+    - asp
+    - aspx
+    - jsp
+    - py
+    - txt
+    - conf
+    - config
+    - bak
+    - backup
+    - swp
+    - old
+    - db
+    - sql
+    - aspx~
+    - asp~
+    - py~
+    - rb
+    - rb~
+    - php~
+    - bkp
+    - cache
+    - cgi
+    - csv
+    - html
+    - inc
+    - jar
+    - js
+    - json
+    - jsp~
+    - lock
+    - log
+    - rar
+    - sql.gz
+    - sql.zip
+    - sql.tar.gz
+    - sql~
+    - swp~
+    - tar
+    - tar.bz2
+    - tar.gz
+    - wadl
+    - zip
+    - do
+    - htm
+    - env
+    - git/
+    - svn/
+    - htaccess
+    - htpasswd
+    - DS_Store
+    - dockerignore
+    - npmrc
+    - terraform
+    - 7z
+    - dll
+    - exe
+    - sh
+    - pem
+    - ppk
+    - key
+    - cer
+    - pfx
+    - xml
+    - yaml
+    - yml
+    - ini
+    - war
+    - jspx
+    - cfm
+    - ashx
+    - action
+    - dwr
+    - svc
+  status_codes:
+    - 200
+    - 403
+    - 301
+    - 302
+  output_file: "dirsearch.txt"
+  full_url: true                  # Show full URLs in output (--full-url)
+  recursive: true                 # Follow redirects (-r flag)
+  threads: 30                     # Number of threads

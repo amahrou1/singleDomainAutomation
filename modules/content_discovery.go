@@ -13,48 +13,48 @@ import (
 	"subdomain-recon/utils"
 )
 
-// ContentDiscovery module for directory and file bruteforcing
-type ContentDiscovery struct {
-	config *config.Config
-	cdConfig *config.ContentDiscoveryConfig
+// Feroxbuster module for directory and file bruteforcing
+type Feroxbuster struct {
+	config   *config.Config
+	fxConfig *config.FeroxbusterConfig
 }
 
-// NewContentDiscovery creates a new ContentDiscovery module
-func NewContentDiscovery(cfg *config.Config) *ContentDiscovery {
-	cdConfig := config.NewContentDiscoveryConfig(cfg.OutputDir)
-	return &ContentDiscovery{
+// NewFeroxbuster creates a new Feroxbuster module
+func NewFeroxbuster(cfg *config.Config) *Feroxbuster {
+	fxConfig := cfg.NewFeroxbusterConfig()
+	return &Feroxbuster{
 		config:   cfg,
-		cdConfig: cdConfig,
+		fxConfig: fxConfig,
 	}
 }
 
-// Run executes the content discovery module
-func (cd *ContentDiscovery) Run() error {
-	moduleName := "Content Discovery (feroxbuster)"
+// Run executes the feroxbuster module
+func (fx *Feroxbuster) Run() error {
+	moduleName := "Feroxbuster (Directory/File Bruteforce)"
 	utils.LogModuleStart(moduleName)
 
 	startTime := time.Now()
 
 	// Check if feroxbuster is installed
-	if err := cd.checkFeroxbuster(); err != nil {
+	if err := fx.checkFeroxbuster(); err != nil {
 		utils.LogModuleSkip(moduleName, err.Error())
 		return err
 	}
 
 	// Check if wordlist exists
-	if err := cd.checkWordlist(); err != nil {
+	if err := fx.checkWordlist(); err != nil {
 		utils.LogModuleSkip(moduleName, err.Error())
 		return err
 	}
 
 	// Create output directory if it doesn't exist
-	if err := os.MkdirAll(cd.config.OutputDir, 0755); err != nil {
+	if err := os.MkdirAll(fx.config.OutputDir, 0755); err != nil {
 		utils.LogModuleSkip(moduleName, fmt.Sprintf("Failed to create output directory: %v", err))
 		return err
 	}
 
 	// Run feroxbuster with timeout
-	err := cd.runFeroxbuster()
+	err := fx.runFeroxbuster()
 
 	duration := time.Since(startTime)
 	utils.LogModuleEnd(moduleName, err, duration)
@@ -63,7 +63,7 @@ func (cd *ContentDiscovery) Run() error {
 }
 
 // checkFeroxbuster checks if feroxbuster is installed
-func (cd *ContentDiscovery) checkFeroxbuster() error {
+func (fx *Feroxbuster) checkFeroxbuster() error {
 	_, err := exec.LookPath("feroxbuster")
 	if err != nil {
 		return fmt.Errorf("feroxbuster is not installed or not in PATH")
@@ -72,37 +72,49 @@ func (cd *ContentDiscovery) checkFeroxbuster() error {
 }
 
 // checkWordlist checks if the wordlist file exists
-func (cd *ContentDiscovery) checkWordlist() error {
-	if _, err := os.Stat(cd.config.WordlistPath); os.IsNotExist(err) {
-		return fmt.Errorf("wordlist not found at %s", cd.config.WordlistPath)
+func (fx *Feroxbuster) checkWordlist() error {
+	if _, err := os.Stat(fx.fxConfig.Wordlist); os.IsNotExist(err) {
+		return fmt.Errorf("wordlist not found at %s", fx.fxConfig.Wordlist)
 	}
 	return nil
 }
 
 // runFeroxbuster executes the feroxbuster command with timeout
-func (cd *ContentDiscovery) runFeroxbuster() error {
+func (fx *Feroxbuster) runFeroxbuster() error {
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), cd.config.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), fx.config.Timeout)
 	defer cancel()
 
 	// Prepare status codes as comma-separated string
-	statusCodes := strings.Join(cd.cdConfig.StatusCodes, ",")
+	statusCodes := strings.Join(fx.fxConfig.StatusCodes, ",")
 
-	// Build the command
-	// feroxbuster -u https://subdomain.test.com -w /root/myLists/all.txt -s 200,403,301,302,307 -k -n --no-state
+	// Build the command arguments
 	args := []string{
-		"-u", cd.config.Target,
-		"-w", cd.config.WordlistPath,
+		"-u", fx.config.Target,
+		"-w", fx.fxConfig.Wordlist,
 		"-s", statusCodes,
-		"-k",           // Skip SSL verification
-		"-n",           // Don't scan recursively
-		"--no-state",   // Don't save or load state
-		"-o", cd.cdConfig.OutputFile, // Output file
+		"-t", fmt.Sprintf("%d", fx.fxConfig.Threads),
+		"-o", fx.fxConfig.OutputFile,
+	}
+
+	// Add SSL skip if enabled
+	if fx.fxConfig.SkipSSL {
+		args = append(args, "-k")
+	}
+
+	// Add no-recursion if depth is 0
+	if fx.fxConfig.RecursionDepth == 0 {
+		args = append(args, "-n")
+	}
+
+	// Add no-state if enabled
+	if fx.fxConfig.NoState {
+		args = append(args, "--no-state")
 	}
 
 	utils.InfoLogger.Printf("Running: feroxbuster %s", strings.Join(args, " "))
-	utils.InfoLogger.Printf("Output will be saved to: %s", cd.cdConfig.OutputFile)
-	utils.InfoLogger.Printf("Timeout: %s", cd.config.Timeout)
+	utils.InfoLogger.Printf("Output will be saved to: %s", fx.fxConfig.OutputFile)
+	utils.InfoLogger.Printf("Timeout: %s", fx.config.Timeout)
 
 	// Create the command with context
 	cmd := exec.CommandContext(ctx, "feroxbuster", args...)
@@ -116,19 +128,19 @@ func (cd *ContentDiscovery) runFeroxbuster() error {
 
 	// Check if context deadline exceeded (timeout)
 	if ctx.Err() == context.DeadlineExceeded {
-		utils.WarningLogger.Printf("feroxbuster timed out after %s", cd.config.Timeout)
+		utils.WarningLogger.Printf("feroxbuster timed out after %s", fx.config.Timeout)
 		// Check if any output was generated
-		if cd.checkOutputFile() {
-			utils.InfoLogger.Printf("Partial results saved to %s", cd.cdConfig.OutputFile)
+		if fx.checkOutputFile() {
+			utils.InfoLogger.Printf("Partial results saved to %s", fx.fxConfig.OutputFile)
 			return nil // Don't treat timeout as error if we have partial results
 		}
-		return fmt.Errorf("feroxbuster timed out after %s with no results", cd.config.Timeout)
+		return fmt.Errorf("feroxbuster timed out after %s with no results", fx.config.Timeout)
 	}
 
 	// Check for other errors
 	if err != nil {
 		// Check if output file was created despite error
-		if cd.checkOutputFile() {
+		if fx.checkOutputFile() {
 			utils.WarningLogger.Printf("feroxbuster encountered an error but produced output: %v", err)
 			return nil // Don't fail the module if we have output
 		}
@@ -136,22 +148,22 @@ func (cd *ContentDiscovery) runFeroxbuster() error {
 	}
 
 	// Verify output file exists and has content
-	if !cd.checkOutputFile() {
+	if !fx.checkOutputFile() {
 		return fmt.Errorf("feroxbuster completed but no output file was generated")
 	}
 
 	// Get file info
-	fileInfo, err := os.Stat(cd.cdConfig.OutputFile)
+	fileInfo, err := os.Stat(fx.fxConfig.OutputFile)
 	if err == nil {
-		utils.SuccessLogger.Printf("Output saved to: %s (Size: %d bytes)", cd.cdConfig.OutputFile, fileInfo.Size())
+		utils.SuccessLogger.Printf("Output saved to: %s (Size: %d bytes)", fx.fxConfig.OutputFile, fileInfo.Size())
 	}
 
 	return nil
 }
 
 // checkOutputFile checks if the output file exists and has content
-func (cd *ContentDiscovery) checkOutputFile() bool {
-	fileInfo, err := os.Stat(cd.cdConfig.OutputFile)
+func (fx *Feroxbuster) checkOutputFile() bool {
+	fileInfo, err := os.Stat(fx.fxConfig.OutputFile)
 	if err != nil {
 		return false
 	}
@@ -159,6 +171,6 @@ func (cd *ContentDiscovery) checkOutputFile() bool {
 }
 
 // GetOutputPath returns the absolute path to the output file
-func (cd *ContentDiscovery) GetOutputPath() (string, error) {
-	return filepath.Abs(cd.cdConfig.OutputFile)
+func (fx *Feroxbuster) GetOutputPath() (string, error) {
+	return filepath.Abs(fx.fxConfig.OutputFile)
 }
