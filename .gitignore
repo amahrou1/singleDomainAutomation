@@ -1,0 +1,30 @@
+# Binaries
+subdomain-recon
+
+# Output directories
+fuzzing-output/
+output/
+*/
+
+# Temporary files
+*.temp
+*.tmp
+
+# Go build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Go coverage files
+*.out
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
