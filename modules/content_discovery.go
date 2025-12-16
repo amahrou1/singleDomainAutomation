@@ -88,13 +88,19 @@ func (fx *Feroxbuster) runFeroxbuster() error {
 	// Prepare status codes as comma-separated string
 	statusCodes := strings.Join(fx.fxConfig.StatusCodes, ",")
 
-	// Build the command arguments
+	// Write target header to output file
+	fx.writeTargetHeader()
+
+	// Create temp output file for this target
+	tempFile := fx.fxConfig.OutputFile + ".temp"
+
+	// Build the command arguments (output to temp file)
 	args := []string{
 		"-u", fx.config.Target,
 		"-w", fx.fxConfig.Wordlist,
 		"-s", statusCodes,
 		"-t", fmt.Sprintf("%d", fx.fxConfig.Threads),
-		"-o", fx.fxConfig.OutputFile,
+		"-o", tempFile,
 	}
 
 	// Add SSL skip if enabled
@@ -119,43 +125,46 @@ func (fx *Feroxbuster) runFeroxbuster() error {
 	// Create the command with context
 	cmd := exec.CommandContext(ctx, "feroxbuster", args...)
 
-	// Set output to both stdout and file
+	// Set output to stdout only
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	// Run the command
 	err := cmd.Run()
 
+	// Append temp file results to main output file
+	defer os.Remove(tempFile) // Clean up temp file
+
 	// Check if context deadline exceeded (timeout)
 	if ctx.Err() == context.DeadlineExceeded {
 		utils.WarningLogger.Printf("feroxbuster timed out after %s", fx.config.Timeout)
-		// Check if any output was generated
-		if fx.checkOutputFile() {
-			utils.InfoLogger.Printf("Partial results saved to %s", fx.fxConfig.OutputFile)
-			return nil // Don't treat timeout as error if we have partial results
+		// Try to append partial results if they exist
+		if fx.appendTempToMain(tempFile) {
+			utils.InfoLogger.Printf("Partial results appended to %s", fx.fxConfig.OutputFile)
+			return nil
 		}
 		return fmt.Errorf("feroxbuster timed out after %s with no results", fx.config.Timeout)
 	}
 
 	// Check for other errors
 	if err != nil {
-		// Check if output file was created despite error
-		if fx.checkOutputFile() {
+		// Try to append results even if there was an error
+		if fx.appendTempToMain(tempFile) {
 			utils.WarningLogger.Printf("feroxbuster encountered an error but produced output: %v", err)
 			return nil // Don't fail the module if we have output
 		}
 		return fmt.Errorf("feroxbuster failed: %v", err)
 	}
 
-	// Verify output file exists and has content
-	if !fx.checkOutputFile() {
+	// Append temp file to main output file
+	if !fx.appendTempToMain(tempFile) {
 		return fmt.Errorf("feroxbuster completed but no output file was generated")
 	}
 
 	// Get file info
 	fileInfo, err := os.Stat(fx.fxConfig.OutputFile)
 	if err == nil {
-		utils.SuccessLogger.Printf("Output saved to: %s (Size: %d bytes)", fx.fxConfig.OutputFile, fileInfo.Size())
+		utils.SuccessLogger.Printf("Output appended to: %s (Total size: %d bytes)", fx.fxConfig.OutputFile, fileInfo.Size())
 	}
 
 	return nil
@@ -173,4 +182,53 @@ func (fx *Feroxbuster) checkOutputFile() bool {
 // GetOutputPath returns the absolute path to the output file
 func (fx *Feroxbuster) GetOutputPath() (string, error) {
 	return filepath.Abs(fx.fxConfig.OutputFile)
+}
+
+// writeTargetHeader writes a separator and target info to the output file
+func (fx *Feroxbuster) writeTargetHeader() error {
+	f, err := os.OpenFile(fx.fxConfig.OutputFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	header := fmt.Sprintf("\n\n%s\n[FEROXBUSTER] Target: %s\n%s\n",
+		strings.Repeat("=", 80),
+		fx.config.Target,
+		strings.Repeat("=", 80))
+
+	_, err = f.WriteString(header)
+	return err
+}
+
+// appendTempToMain appends the temporary file content to the main output file
+func (fx *Feroxbuster) appendTempToMain(tempFile string) bool {
+	// Check if temp file exists and has content
+	tempInfo, err := os.Stat(tempFile)
+	if err != nil || tempInfo.Size() == 0 {
+		return false
+	}
+
+	// Read temp file
+	tempContent, err := os.ReadFile(tempFile)
+	if err != nil {
+		return false
+	}
+
+	// Append to main file
+	f, err := os.OpenFile(fx.fxConfig.OutputFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	_, err = f.Write(tempContent)
+	if err != nil {
+		return false
+	}
+
+	// Add a newline separator after the results
+	f.WriteString("\n")
+
+	return true
 }

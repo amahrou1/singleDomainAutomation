@@ -109,15 +109,8 @@ func LoadConfig(target string, configPath string) (*Config, error) {
 		return nil, fmt.Errorf("invalid timeout format '%s': %v", yamlConfig.General.Timeout, err)
 	}
 
-	// Extract subdomain from target URL
-	subdomain, err := extractSubdomain(target)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract subdomain: %v", err)
-	}
-
-	// Create output directory path with subdomain name
-	// If output_dir is "./output", it becomes "./subdomain.test.com"
-	outputDir := "./" + subdomain
+	// Use single output directory for all targets
+	outputDir := "./fuzzing-output"
 
 	// Create config
 	cfg := &Config{
