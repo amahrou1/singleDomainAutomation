@@ -10,6 +10,7 @@ general:
 modules:
   feroxbuster: true               # Enable/disable feroxbuster content discovery
   dirsearch: true                 # Enable/disable dirsearch fuzzing
+  crawling: true                  # Enable/disable web crawling & URL discovery
 
 # Feroxbuster Configuration
 feroxbuster:
@@ -113,3 +114,11 @@ dirsearch:
   full_url: true                  # Show full URLs in output (--full-url)
   recursive: true                 # Follow redirects (-r flag)
   threads: 30                     # Number of threads
+
+# Web Crawling Configuration
+crawling:
+  output_file: "crawling-result.txt"
+  katana:
+    depth: 5                      # Crawl depth
+    concurrency: 20               # Number of concurrent requests
+    rate_limit: 150               # Requests per second

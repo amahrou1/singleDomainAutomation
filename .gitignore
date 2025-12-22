@@ -4,7 +4,6 @@ subdomain-recon
 # Output directories
 fuzzing-output/
 output/
-*/
 
 # Temporary files
 *.temp

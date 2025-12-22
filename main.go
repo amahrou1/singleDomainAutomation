@@ -190,7 +190,7 @@ func printBanner() {
 ║                                                           ║
 ║     Single Subdomain Reconnaissance Tool                 ║
 ║     Version: ` + Version + `                                          ║
-║     Modules: Feroxbuster + Dirsearch                      ║
+║     Modules: Feroxbuster + Dirsearch + Crawling           ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 `
@@ -243,6 +243,7 @@ func printHelp() {
 	fmt.Println("\nModules:")
 	fmt.Println("  1. Feroxbuster - Fast directory/file bruteforcing")
 	fmt.Println("  2. Dirsearch   - Advanced path fuzzing with multiple extensions")
+	fmt.Println("  3. Crawling    - Web crawling & URL discovery (Katana, Hakrawler, GAU)")
 	fmt.Println("\nConfiguration:")
 	fmt.Println("  Edit 'config.yaml' to customize:")
 	fmt.Println("    - Wordlists")
@@ -252,9 +253,10 @@ func printHelp() {
 	fmt.Println("    - Enable/disable modules")
 	fmt.Println("    - Output file names")
 	fmt.Println("\nOutput:")
-	fmt.Println("  Results are saved to ./subdomain.target.com/ directory:")
-	fmt.Println("    - feroxbuster.txt - Feroxbuster results")
-	fmt.Println("    - dirsearch.txt   - Dirsearch results")
+	fmt.Println("  Results are saved to ./fuzzing-output/ directory:")
+	fmt.Println("    - feroxbuster.txt     - Feroxbuster results")
+	fmt.Println("    - dirsearch.txt       - Dirsearch results")
+	fmt.Println("    - crawling-result.txt - Crawling results (live URLs only)")
 	fmt.Println("\nFor more information, see README.md")
 }
 
@@ -267,6 +269,7 @@ func printConfig(cfg *config.Config) {
 	fmt.Println("\n[Enabled Modules]")
 	fmt.Printf("  Feroxbuster:  %v\n", cfg.EnableModules["feroxbuster"])
 	fmt.Printf("  Dirsearch:    %v\n", cfg.EnableModules["dirsearch"])
+	fmt.Printf("  Crawling:     %v\n", cfg.EnableModules["crawling"])
 
 	if cfg.EnableModules["feroxbuster"] {
 		fxCfg := cfg.NewFeroxbusterConfig()
@@ -289,6 +292,17 @@ func printConfig(cfg *config.Config) {
 		fmt.Printf("  Status Codes: %s\n", dsCfg.StatusCodes)
 		fmt.Printf("  Threads:      %d\n", dsCfg.Threads)
 		fmt.Printf("  Output:       %s\n", dsCfg.OutputFile)
+	}
+
+	if cfg.EnableModules["crawling"] {
+		crawlCfg := cfg.NewCrawlingConfig()
+		fmt.Println("\n[Crawling Settings]")
+		fmt.Printf("  Tools:        Katana, Hakrawler, GAU\n")
+		fmt.Printf("  Depth:        %d\n", crawlCfg.Katana.Depth)
+		fmt.Printf("  Concurrency:  %d\n", crawlCfg.Katana.Concurrency)
+		fmt.Printf("  Rate Limit:   %d req/s\n", crawlCfg.Katana.RateLimit)
+		fmt.Printf("  Pipeline:     Filter → Unique (anew) → Similar (uro) → Live (httpx)\n")
+		fmt.Printf("  Output:       %s\n", crawlCfg.OutputFile)
 	}
 
 	fmt.Println("─────────────────────────────────────────────────────────\n")
@@ -329,6 +343,21 @@ func runModules(cfg *config.Config) bool {
 		}
 	}
 
+	// Module 3: Web Crawling
+	if cfg.EnableModules["crawling"] {
+		moduleCount++
+		crawling := modules.NewCrawling(cfg)
+		err := crawling.Run()
+		if err != nil {
+			failCount++
+			utils.WarningLogger.Printf("Crawling module completed with errors: %v", err)
+		} else {
+			successCount++
+			outputPath, _ := crawling.GetOutputPath()
+			utils.SuccessLogger.Printf("Crawling results: %s", outputPath)
+		}
+	}
+
 	// Print module summary for this target
 	fmt.Println("\n[Module Execution Summary]")
 	fmt.Println("─────────────────────────────────────────────────────────")
@@ -357,7 +386,7 @@ func printFinalSummary(duration time.Duration, totalTargets, successCount, failC
 	fmt.Printf("\nTotal Execution Time: %s\n", duration)
 
 	if successCount > 0 {
-		fmt.Println("\n✅ Results saved to subdomain-specific directories")
-		fmt.Println("💡 Tip: Review the output files for discovered paths and files")
+		fmt.Println("\n✅ Results saved to ./fuzzing-output/ directory")
+		fmt.Println("💡 Tip: Review the output files for discovered paths, files, and live URLs")
 	}
 }

@@ -20,6 +20,7 @@ type YAMLConfig struct {
 	Modules struct {
 		Feroxbuster bool `yaml:"feroxbuster"`
 		Dirsearch   bool `yaml:"dirsearch"`
+		Crawling    bool `yaml:"crawling"`
 	} `yaml:"modules"`
 
 	Feroxbuster struct {
@@ -41,15 +42,25 @@ type YAMLConfig struct {
 		Recursive   bool     `yaml:"recursive"`
 		Threads     int      `yaml:"threads"`
 	} `yaml:"dirsearch"`
+
+	Crawling struct {
+		OutputFile string `yaml:"output_file"`
+		Katana     struct {
+			Depth       int `yaml:"depth"`
+			Concurrency int `yaml:"concurrency"`
+			RateLimit   int `yaml:"rate_limit"`
+		} `yaml:"katana"`
+	} `yaml:"crawling"`
 }
 
 // Config holds the runtime configuration for the recon tool
 type Config struct {
-	Target        string
-	OutputDir     string
-	Timeout       time.Duration
-	EnableModules map[string]bool
-	YAMLConfig    *YAMLConfig
+	Target         string
+	OutputDir      string
+	Timeout        time.Duration
+	EnableModules  map[string]bool
+	YAMLConfig     *YAMLConfig
+	CrawlingConfig *CrawlingConfig
 }
 
 // extractSubdomain extracts the subdomain/hostname from a URL and includes port if non-standard
@@ -121,6 +132,7 @@ func LoadConfig(target string, configPath string) (*Config, error) {
 		EnableModules: map[string]bool{
 			"feroxbuster": yamlConfig.Modules.Feroxbuster,
 			"dirsearch":   yamlConfig.Modules.Dirsearch,
+			"crawling":    yamlConfig.Modules.Crawling,
 		},
 	}
 
@@ -184,5 +196,31 @@ func (c *Config) NewDirsearchConfig() *DirsearchConfig {
 		FullURL:     c.YAMLConfig.Dirsearch.FullURL,
 		Recursive:   c.YAMLConfig.Dirsearch.Recursive,
 		Threads:     c.YAMLConfig.Dirsearch.Threads,
+	}
+}
+
+// CrawlingConfig holds configuration specific to web crawling
+type CrawlingConfig struct {
+	OutputFile string
+	Katana     struct {
+		Depth       int
+		Concurrency int
+		RateLimit   int
+	}
+}
+
+// NewCrawlingConfig returns crawling config from YAML
+func (c *Config) NewCrawlingConfig() *CrawlingConfig {
+	return &CrawlingConfig{
+		OutputFile: c.OutputDir + "/" + c.YAMLConfig.Crawling.OutputFile,
+		Katana: struct {
+			Depth       int
+			Concurrency int
+			RateLimit   int
+		}{
+			Depth:       c.YAMLConfig.Crawling.Katana.Depth,
+			Concurrency: c.YAMLConfig.Crawling.Katana.Concurrency,
+			RateLimit:   c.YAMLConfig.Crawling.Katana.RateLimit,
+		},
 	}
 }
