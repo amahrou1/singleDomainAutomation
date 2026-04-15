@@ -55,12 +55,11 @@ type YAMLConfig struct {
 
 // Config holds the runtime configuration for the recon tool
 type Config struct {
-	Target         string
-	OutputDir      string
-	Timeout        time.Duration
-	EnableModules  map[string]bool
-	YAMLConfig     *YAMLConfig
-	CrawlingConfig *CrawlingConfig
+	Target        string
+	OutputDir     string
+	Timeout       time.Duration
+	EnableModules map[string]bool
+	YAMLConfig    *YAMLConfig
 }
 
 // extractSubdomain extracts the subdomain/hostname from a URL and includes port if non-standard
