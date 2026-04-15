@@ -28,6 +28,7 @@ func main() {
 	configPath := flag.String("c", ConfigFile, "Path to config file")
 	domain := flag.String("d", "", "Single domain to scan")
 	listFile := flag.String("l", "", "File containing list of domains (one per line)")
+	outputDir := flag.String("o", "", "Output directory for all results (overrides default ./fuzzing-output)")
 
 	flag.Parse()
 
@@ -105,7 +106,7 @@ func main() {
 		}
 
 		// Load configuration for this target
-		cfg, err := config.LoadConfig(target, *configPath)
+		cfg, err := config.LoadConfig(target, *configPath, *outputDir)
 		if err != nil {
 			utils.ErrorLogger.Printf("Failed to load configuration for %s: %v", target, err)
 			failCount++
@@ -203,6 +204,7 @@ func printUsage() {
 	fmt.Println("  -d <domain>     Scan a single domain")
 	fmt.Println("  -l <file>       Scan multiple domains from a file")
 	fmt.Println("  -c <file>       Path to config file (default: config.yaml)")
+	fmt.Println("  -o <dir>        Output directory for all results (default: ./fuzzing-output)")
 	fmt.Println("  -h              Show help message")
 	fmt.Println("  -v              Show version")
 	fmt.Println("\nExamples:")
@@ -211,6 +213,9 @@ func printUsage() {
 	fmt.Println("")
 	fmt.Println("  # Multiple domains from file")
 	fmt.Println("  subdomain-recon -l subdomains.txt")
+	fmt.Println("")
+	fmt.Println("  # With custom output directory")
+	fmt.Println("  subdomain-recon -l subdomains.txt -o /root/target/output")
 	fmt.Println("")
 	fmt.Println("  # With custom config")
 	fmt.Println("  subdomain-recon -d https://api.example.com -c custom.yaml")
@@ -253,10 +258,12 @@ func printHelp() {
 	fmt.Println("    - Enable/disable modules")
 	fmt.Println("    - Output file names")
 	fmt.Println("\nOutput:")
-	fmt.Println("  Results are saved to ./fuzzing-output/ directory:")
-	fmt.Println("    - feroxbuster.txt     - Feroxbuster results")
-	fmt.Println("    - dirsearch.txt       - Dirsearch results")
-	fmt.Println("    - crawling-result.txt - Crawling results (live URLs only)")
+	fmt.Println("  Results are saved to ./fuzzing-output/ by default, or to the")
+	fmt.Println("  directory specified with the -o flag:")
+	fmt.Println("    - feroxbuster.txt     - Feroxbuster results (all targets, single file)")
+	fmt.Println("    - dirsearch.txt       - Dirsearch results (all targets, single file)")
+	fmt.Println("    - crawling-result.txt - Crawling results (all targets, single file)")
+	fmt.Println("\n  Example: subdomain-recon -l subs.txt -o /root/target/output")
 	fmt.Println("\nFor more information, see README.md")
 }
 
@@ -386,7 +393,7 @@ func printFinalSummary(duration time.Duration, totalTargets, successCount, failC
 	fmt.Printf("\nTotal Execution Time: %s\n", duration)
 
 	if successCount > 0 {
-		fmt.Println("\n✅ Results saved to ./fuzzing-output/ directory")
+		fmt.Println("\n✅ Scan complete. Review the output directory for results.")
 		fmt.Println("💡 Tip: Review the output files for discovered paths, files, and live URLs")
 	}
 }

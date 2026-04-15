@@ -101,7 +101,7 @@ func extractSubdomain(targetURL string) (string, error) {
 }
 
 // LoadConfig loads configuration from config.yaml and merges with target
-func LoadConfig(target string, configPath string) (*Config, error) {
+func LoadConfig(target string, configPath string, outputDirOverride string) (*Config, error) {
 	// Read YAML file
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -120,8 +120,13 @@ func LoadConfig(target string, configPath string) (*Config, error) {
 		return nil, fmt.Errorf("invalid timeout format '%s': %v", yamlConfig.General.Timeout, err)
 	}
 
-	// Use single output directory for all targets
+	// Determine output directory:
+	//   1. CLI override (-o flag) takes precedence
+	//   2. Fall back to the default single output directory
 	outputDir := "./fuzzing-output"
+	if outputDirOverride != "" {
+		outputDir = outputDirOverride
+	}
 
 	// Create config
 	cfg := &Config{
