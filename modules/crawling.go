@@ -25,7 +25,7 @@ type Crawling struct {
 func NewCrawling(cfg *config.Config) *Crawling {
 	return &Crawling{
 		config:      cfg,
-		crawlConfig: cfg.CrawlingConfig,
+		crawlConfig: cfg.NewCrawlingConfig(),
 		tempDir:     cfg.OutputDir + "/.temp-crawl",
 		unwantedExts: []string{
 			"jpg", "jpeg", "gif", "png", "svg", "ico", "webp", "bmp",
