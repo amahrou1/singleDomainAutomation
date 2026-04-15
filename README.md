@@ -8,7 +8,7 @@ A modular Go-based reconnaissance tool focused on scanning a single subdomain fo
 - ✅ **Dirsearch Module** - Advanced path fuzzing with 74+ file extensions
 - ✅ **Dual Content Discovery** - Run both Feroxbuster AND Dirsearch
 - ✅ **Multiple Input Modes** - Single domain (`-d`) or batch scan from file (`-l`)
-- ✅ **Subdomain-Based Directories** - Auto-organized output per subdomain
+- ✅ **Custom Output Directory** - Use `-o /path/to/dir` to send all results into one location
 - ✅ **Enhanced CLI** - Help flags, version info, custom config paths
 - ✅ **Sequential Batch Processing** - Scan multiple targets one by one
 - ✅ **Better Logging** - Module execution summary and success/failure tracking
@@ -188,6 +188,39 @@ mv config.yaml ~/.subdomain-recon.yaml
 subdomain-recon -c ~/.subdomain-recon.yaml https://target.com
 ```
 
+### Updating an Existing Installation (Ubuntu)
+
+If you already have the tool installed and want to pull in the latest changes
+(for example, the new `-o` output directory flag), run the following from the
+cloned project directory:
+
+```bash
+# 1. Pull the latest code
+cd /path/to/singleDomainAutomation
+git pull origin main         # or: git pull origin <your-branch>
+
+# 2. Rebuild the binary
+go build -o subdomain-recon main.go
+
+# 3a. If you installed to /usr/local/bin (Option 1):
+sudo mv -f subdomain-recon /usr/local/bin/
+
+# 3b. If you installed to ~/bin (Option 2):
+mv -f subdomain-recon ~/bin/
+
+# 3c. If you used a symlink (Option 3), no move needed — the symlink
+#     already points at the freshly built binary in the repo.
+
+# 4. Verify the new flag is available
+subdomain-recon -h | grep -- '-o'
+```
+
+You should now see the `-o <dir>` option in the help output. Test it with:
+
+```bash
+subdomain-recon -l subdomains.txt -o /root/target/output
+```
+
 ## Configuration
 
 All settings are managed through `config.yaml`. Edit this file to customize:
@@ -195,13 +228,17 @@ All settings are managed through `config.yaml`. Edit this file to customize:
 ### General Settings
 ```yaml
 general:
-  output_dir: "./output"    # NOTE: This is now auto-generated from subdomain name
+  output_dir: "./output"    # NOTE: Ignored. Default output dir is ./fuzzing-output or override with -o flag
   timeout: "5h"             # Max timeout per module (5h, 30m, 2h30m)
 ```
 
-**Note:** The `output_dir` setting is now automatically determined from your target subdomain. For example:
-- Target: `https://api.example.com` → Output: `./api.example.com/`
-- Target: `https://admin.test.com` → Output: `./admin.test.com/`
+**Note:** The output directory is `./fuzzing-output` by default. You can override
+it with the `-o` flag on the command line, for example:
+```bash
+subdomain-recon -l subdomains.txt -o /root/target/output
+```
+All modules (feroxbuster, dirsearch, crawling) will write their single consolidated
+result files inside that directory.
 
 ### Enable/Disable Modules
 ```yaml
@@ -309,6 +346,14 @@ subdomain-recon -d https://api.test.com
 subdomain-recon -l targets.txt
 ```
 
+**With custom output directory (`-o` flag):**
+```bash
+# All dirsearch, feroxbuster, and crawling results will be written
+# into /root/target/output (one consolidated file per module).
+subdomain-recon -l targets.txt -o /root/target/output
+subdomain-recon -d https://api.test.com -o /root/target/output
+```
+
 **With custom config:**
 ```bash
 subdomain-recon -d https://api.test.com -c ~/.subdomain-recon.yaml
@@ -388,8 +433,10 @@ feroxbuster -u https://subdomain.test.com \
   -k \
   -n \
   --no-state \
-  -o ./output/feroxbuster.txt
+  -o <output-dir>/feroxbuster.txt
 ```
+
+Where `<output-dir>` is `./fuzzing-output` by default, or whatever you pass to `-o`.
 
 **Parameters:**
 - `-u` : Target URL
@@ -410,8 +457,10 @@ dirsearch -u https://subdomain.test.com \
   -t 30 \
   --full-url \
   -r \
-  -o ./output/dirsearch.txt
+  -o <output-dir>/dirsearch.txt
 ```
+
+Where `<output-dir>` is `./fuzzing-output` by default, or whatever you pass to `-o`.
 
 **Parameters:**
 - `-u` : Target URL
@@ -424,52 +473,56 @@ dirsearch -u https://subdomain.test.com \
 
 ## Output
 
-### Automatic Directory Creation
+### Output Directory
 
-Results are automatically saved in a directory named after your target subdomain in the current working directory.
+By default, all results are saved to `./fuzzing-output/` in the current working
+directory. You can override this location with the `-o` flag:
 
-**Examples:**
 ```bash
-./subdomain-recon https://api.example.com
-# Creates: ./api.example.com/
-#   ├── feroxbuster.txt
-#   └── dirsearch.txt
-
-./subdomain-recon https://admin.target.com
-# Creates: ./admin.target.com/
-#   ├── feroxbuster.txt
-#   └── dirsearch.txt
-
-./subdomain-recon sub.test.com
-# Creates: ./sub.test.com/
-#   ├── feroxbuster.txt
-#   └── dirsearch.txt
+subdomain-recon -l subdomains.txt -o /root/target/output
 ```
 
 ### Output Files
 
-Each subdomain directory contains:
-- `feroxbuster.txt` - Feroxbuster discovered paths/files
-- `dirsearch.txt` - Dirsearch discovered paths/files
+Regardless of whether you scan a single domain or a batch from a file, results
+are aggregated into **one consolidated file per module** inside the output
+directory. Each target's results are appended with a clear header separator so
+you can see what belongs to which subdomain/IP.
 
-Both files contain:
-- Discovered URLs/paths
-- HTTP status codes
-- Response sizes
-- Timestamps
+The output directory contains:
+- `feroxbuster.txt` - Feroxbuster results for **all** targets (single file)
+- `dirsearch.txt` - Dirsearch results for **all** targets (single file)
+- `crawling-result.txt` - Crawling results for **all** targets (single file, live URLs only)
 
-### Multiple Scans
+Each block in those files looks like:
+```
+================================================================================
+[DIRSEARCH] Target: https://api.example.com
+================================================================================
+... results for this target ...
 
-You can scan multiple subdomains and each will have its own directory:
+================================================================================
+[DIRSEARCH] Target: https://admin.example.com
+================================================================================
+... results for this target ...
+```
+
+### Examples
+
 ```bash
-./subdomain-recon https://api.target.com
-./subdomain-recon https://admin.target.com
-./subdomain-recon https://dev.target.com
+# Default location (./fuzzing-output/)
+subdomain-recon -l subdomains.txt
+# Produces:
+#   ./fuzzing-output/feroxbuster.txt
+#   ./fuzzing-output/dirsearch.txt
+#   ./fuzzing-output/crawling-result.txt
 
-# Results:
-# ./api.target.com/feroxbuster.txt, dirsearch.txt
-# ./admin.target.com/feroxbuster.txt, dirsearch.txt
-# ./dev.target.com/feroxbuster.txt, dirsearch.txt
+# Custom location via -o flag
+subdomain-recon -l subdomains.txt -o /root/target/output
+# Produces:
+#   /root/target/output/feroxbuster.txt
+#   /root/target/output/dirsearch.txt
+#   /root/target/output/crawling-result.txt
 ```
 
 ## Error Handling
