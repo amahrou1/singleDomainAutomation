@@ -354,6 +354,15 @@ subdomain-recon -l targets.txt -o /root/target/output
 subdomain-recon -d https://api.test.com -o /root/target/output
 ```
 
+**With per-target timeout (`-t` flag):**
+```bash
+# Cap each module at 10 minutes per target. After 10 minutes the current
+# module is killed (partial results are still saved) and the tool moves on
+# to the next module / next target. Applies to feroxbuster, dirsearch, and
+# crawling alike. Overrides the `timeout:` value in config.yaml.
+subdomain-recon -l targets.txt -o /root/target/output -t 10m
+```
+
 **With custom config:**
 ```bash
 subdomain-recon -d https://api.test.com -c ~/.subdomain-recon.yaml

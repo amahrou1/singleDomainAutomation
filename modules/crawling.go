@@ -59,19 +59,34 @@ func (c *Crawling) Run() error {
 	// Write target header to output file
 	c.writeTargetHeader()
 
-	// Run crawling tools
-	if err := c.runCrawlers(); err != nil {
-		return err
+	// ONE shared context bounds the entire crawling module (crawlers + pipeline)
+	// per target. When it fires, every child command is killed and we fall
+	// through to the best-effort partial-result save below.
+	ctx, cancel := context.WithTimeout(context.Background(), c.config.Timeout)
+	defer cancel()
+
+	// Run crawling tools (errors are logged but do not abort the module)
+	c.runCrawlers(ctx)
+
+	// Process results through filtering pipeline (errors are logged too,
+	// so we always get a chance to save whatever stage completed)
+	pipelineErr := c.processPipeline(ctx)
+
+	// If we hit the per-target timeout, try to save the best partial result
+	if ctx.Err() == context.DeadlineExceeded {
+		utils.WarningLogger.Printf("crawling timed out after %s", c.config.Timeout)
+		if c.saveBestAvailable() {
+			utils.InfoLogger.Printf("Partial results appended to %s", c.crawlConfig.OutputFile)
+			return nil
+		}
+		return fmt.Errorf("crawling timed out after %s with no results", c.config.Timeout)
 	}
 
-	// Process results through filtering pipeline
-	if err := c.processPipeline(); err != nil {
-		return err
-	}
-
-	// Append final results to main output file
-	finalFile := c.tempDir + "/final.txt"
-	if !c.appendTempToMain(finalFile) {
+	// Normal completion: prefer final.txt, fall back to the best intermediate file
+	if !c.saveBestAvailable() {
+		if pipelineErr != nil {
+			return fmt.Errorf("crawling completed but no URLs were collected: %v", pipelineErr)
+		}
 		return fmt.Errorf("crawling completed but no URLs were collected")
 	}
 
@@ -82,6 +97,24 @@ func (c *Crawling) Run() error {
 	}
 
 	return nil
+}
+
+// saveBestAvailable picks the highest-quality pipeline artifact that exists
+// on disk and appends it to the main output file.
+func (c *Crawling) saveBestAvailable() bool {
+	candidates := []string{
+		c.tempDir + "/final.txt",    // after httpx (live URLs)
+		c.tempDir + "/uro.txt",      // after uro (deduped similar URLs)
+		c.tempDir + "/unique.txt",   // after anew (unique URLs)
+		c.tempDir + "/filtered.txt", // after extension filter
+		c.tempDir + "/combined.txt", // just all crawler outputs concatenated
+	}
+	for _, f := range candidates {
+		if c.appendTempToMain(f) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkTools verifies that all required tools are installed
@@ -102,22 +135,31 @@ func (c *Crawling) checkTools() error {
 	return nil
 }
 
-// runCrawlers executes all crawling tools
-func (c *Crawling) runCrawlers() error {
+// runCrawlers executes all crawling tools under the shared module context.
+func (c *Crawling) runCrawlers(ctx context.Context) error {
 	utils.InfoLogger.Println("Running crawlers...")
 
 	// Run Katana scans
-	if err := c.runKatanaScans(); err != nil {
+	if err := c.runKatanaScans(ctx); err != nil {
 		utils.WarningLogger.Printf("Katana failed: %v", err)
 	}
 
+	// Bail out early if we've already blown the per-target budget
+	if ctx.Err() != nil {
+		return nil
+	}
+
 	// Run Hakrawler
-	if err := c.runHakrawler(); err != nil {
+	if err := c.runHakrawler(ctx); err != nil {
 		utils.WarningLogger.Printf("Hakrawler failed: %v", err)
 	}
 
+	if ctx.Err() != nil {
+		return nil
+	}
+
 	// Run GAU
-	if err := c.runGAU(); err != nil {
+	if err := c.runGAU(ctx); err != nil {
 		utils.WarningLogger.Printf("GAU failed: %v", err)
 	}
 
@@ -125,12 +167,8 @@ func (c *Crawling) runCrawlers() error {
 }
 
 // runKatanaScans executes multiple Katana scans with different configurations
-func (c *Crawling) runKatanaScans() error {
+func (c *Crawling) runKatanaScans(ctx context.Context) error {
 	utils.InfoLogger.Println("Running Katana scans (active, passive, parameters, JS)...")
-
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), c.config.Timeout)
-	defer cancel()
 
 	// Scan 1: Standard crawling with JS and forms
 	utils.InfoLogger.Println("  → Katana: Standard crawling with JS and forms")
@@ -138,10 +176,18 @@ func (c *Crawling) runKatanaScans() error {
 		utils.WarningLogger.Printf("Katana standard scan failed: %v", err)
 	}
 
+	if ctx.Err() != nil {
+		return nil
+	}
+
 	// Scan 2: Parameter-focused scan
 	utils.InfoLogger.Println("  → Katana: Parameter-focused scan")
 	if err := c.runKatanaParams(ctx); err != nil {
 		utils.WarningLogger.Printf("Katana parameter scan failed: %v", err)
+	}
+
+	if ctx.Err() != nil {
+		return nil
 	}
 
 	// Scan 3: Passive mode (use archives)
@@ -219,13 +265,9 @@ func (c *Crawling) runKatanaPassive(ctx context.Context) error {
 	return cmd.Run()
 }
 
-// runHakrawler executes hakrawler
-func (c *Crawling) runHakrawler() error {
+// runHakrawler executes hakrawler under the shared module context.
+func (c *Crawling) runHakrawler(ctx context.Context) error {
 	utils.InfoLogger.Println("Running Hakrawler...")
-
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), c.config.Timeout)
-	defer cancel()
 
 	outputFile := c.tempDir + "/hakrawler.txt"
 
@@ -261,13 +303,9 @@ func (c *Crawling) runHakrawler() error {
 	return cmd.Wait()
 }
 
-// runGAU executes GAU
-func (c *Crawling) runGAU() error {
+// runGAU executes GAU under the shared module context.
+func (c *Crawling) runGAU(ctx context.Context) error {
 	utils.InfoLogger.Println("Running GAU (archive URLs)...")
-
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), c.config.Timeout)
-	defer cancel()
 
 	outputFile := c.tempDir + "/gau.txt"
 
@@ -289,36 +327,48 @@ func (c *Crawling) runGAU() error {
 }
 
 // processPipeline processes crawled URLs through filtering pipeline
-func (c *Crawling) processPipeline() error {
+func (c *Crawling) processPipeline(ctx context.Context) error {
 	utils.InfoLogger.Println("Processing URLs through filtering pipeline...")
 
-	// Step 1: Combine all crawled URLs
+	// Step 1: Combine all crawled URLs (pure Go, no timeout needed)
 	combinedFile := c.tempDir + "/combined.txt"
 	if err := c.combineFiles(combinedFile); err != nil {
 		return fmt.Errorf("failed to combine files: %v", err)
 	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 
-	// Step 2: Filter unwanted extensions
+	// Step 2: Filter unwanted extensions (pure Go)
 	filteredFile := c.tempDir + "/filtered.txt"
 	if err := c.filterExtensions(combinedFile, filteredFile); err != nil {
 		return fmt.Errorf("failed to filter extensions: %v", err)
 	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 
 	// Step 3: Use anew to get unique URLs
 	uniqueFile := c.tempDir + "/unique.txt"
-	if err := c.runAnew(filteredFile, uniqueFile); err != nil {
+	if err := c.runAnew(ctx, filteredFile, uniqueFile); err != nil {
 		return fmt.Errorf("failed to run anew: %v", err)
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	// Step 4: Use uro to remove similar URLs
 	uroFile := c.tempDir + "/uro.txt"
-	if err := c.runUro(uniqueFile, uroFile); err != nil {
+	if err := c.runUro(ctx, uniqueFile, uroFile); err != nil {
 		return fmt.Errorf("failed to run uro: %v", err)
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	// Step 5: Use httpx to filter live URLs
 	finalFile := c.tempDir + "/final.txt"
-	if err := c.runHttpx(uroFile, finalFile); err != nil {
+	if err := c.runHttpx(ctx, uroFile, finalFile); err != nil {
 		return fmt.Errorf("failed to run httpx: %v", err)
 	}
 
@@ -414,11 +464,11 @@ func (c *Crawling) filterExtensions(inputFile, outputFile string) error {
 }
 
 // runAnew uses anew to get unique URLs
-func (c *Crawling) runAnew(inputFile, outputFile string) error {
+func (c *Crawling) runAnew(ctx context.Context, inputFile, outputFile string) error {
 	utils.InfoLogger.Println("  → Using anew for unique URLs")
 
 	// anew reads from stdin and writes to specified file
-	cmd := exec.Command("anew", outputFile)
+	cmd := exec.CommandContext(ctx, "anew", outputFile)
 
 	inFile, err := os.Open(inputFile)
 	if err != nil {
@@ -434,7 +484,7 @@ func (c *Crawling) runAnew(inputFile, outputFile string) error {
 }
 
 // runUro uses uro to remove similar URLs
-func (c *Crawling) runUro(inputFile, outputFile string) error {
+func (c *Crawling) runUro(ctx context.Context, inputFile, outputFile string) error {
 	utils.InfoLogger.Println("  → Using uro to remove similar URLs")
 
 	inFile, err := os.Open(inputFile)
@@ -449,7 +499,7 @@ func (c *Crawling) runUro(inputFile, outputFile string) error {
 	}
 	defer outFile.Close()
 
-	cmd := exec.Command("uro")
+	cmd := exec.CommandContext(ctx, "uro")
 	cmd.Stdin = inFile
 	cmd.Stdout = outFile
 	cmd.Stderr = os.Stderr
@@ -458,7 +508,7 @@ func (c *Crawling) runUro(inputFile, outputFile string) error {
 }
 
 // runHttpx uses httpx to filter live URLs
-func (c *Crawling) runHttpx(inputFile, outputFile string) error {
+func (c *Crawling) runHttpx(ctx context.Context, inputFile, outputFile string) error {
 	utils.InfoLogger.Println("  → Using httpx to filter live URLs")
 
 	args := []string{
@@ -469,7 +519,7 @@ func (c *Crawling) runHttpx(inputFile, outputFile string) error {
 		"-threads", "50",
 	}
 
-	cmd := exec.Command("httpx", args...)
+	cmd := exec.CommandContext(ctx, "httpx", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
