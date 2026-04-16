@@ -29,6 +29,7 @@ func main() {
 	domain := flag.String("d", "", "Single domain to scan")
 	listFile := flag.String("l", "", "File containing list of domains (one per line)")
 	outputDir := flag.String("o", "", "Output directory for all results (overrides default ./fuzzing-output)")
+	timeoutFlag := flag.Duration("t", 0, "Per-module timeout per target (e.g., 10m, 1h). Overrides config.yaml value. 0 = use config")
 
 	flag.Parse()
 
@@ -106,7 +107,7 @@ func main() {
 		}
 
 		// Load configuration for this target
-		cfg, err := config.LoadConfig(target, *configPath, *outputDir)
+		cfg, err := config.LoadConfig(target, *configPath, *outputDir, *timeoutFlag)
 		if err != nil {
 			utils.ErrorLogger.Printf("Failed to load configuration for %s: %v", target, err)
 			failCount++
@@ -205,6 +206,7 @@ func printUsage() {
 	fmt.Println("  -l <file>       Scan multiple domains from a file")
 	fmt.Println("  -c <file>       Path to config file (default: config.yaml)")
 	fmt.Println("  -o <dir>        Output directory for all results (default: ./fuzzing-output)")
+	fmt.Println("  -t <duration>   Per-module timeout per target (e.g., 10m, 1h). Overrides config")
 	fmt.Println("  -h              Show help message")
 	fmt.Println("  -v              Show version")
 	fmt.Println("\nExamples:")
@@ -216,6 +218,9 @@ func printUsage() {
 	fmt.Println("")
 	fmt.Println("  # With custom output directory")
 	fmt.Println("  subdomain-recon -l subdomains.txt -o /root/target/output")
+	fmt.Println("")
+	fmt.Println("  # 10 minute cap per module per target")
+	fmt.Println("  subdomain-recon -l subdomains.txt -o /root/target/output -t 10m")
 	fmt.Println("")
 	fmt.Println("  # With custom config")
 	fmt.Println("  subdomain-recon -d https://api.example.com -c custom.yaml")

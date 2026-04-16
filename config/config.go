@@ -100,7 +100,7 @@ func extractSubdomain(targetURL string) (string, error) {
 }
 
 // LoadConfig loads configuration from config.yaml and merges with target
-func LoadConfig(target string, configPath string, outputDirOverride string) (*Config, error) {
+func LoadConfig(target string, configPath string, outputDirOverride string, timeoutOverride time.Duration) (*Config, error) {
 	// Read YAML file
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -117,6 +117,11 @@ func LoadConfig(target string, configPath string, outputDirOverride string) (*Co
 	timeout, err := time.ParseDuration(yamlConfig.General.Timeout)
 	if err != nil {
 		return nil, fmt.Errorf("invalid timeout format '%s': %v", yamlConfig.General.Timeout, err)
+	}
+
+	// CLI override (-t flag) takes precedence over YAML
+	if timeoutOverride > 0 {
+		timeout = timeoutOverride
 	}
 
 	// Determine output directory:
