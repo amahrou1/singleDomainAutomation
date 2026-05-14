@@ -192,7 +192,7 @@ func printBanner() {
 ║                                                           ║
 ║     Single Subdomain Reconnaissance Tool                 ║
 ║     Version: ` + Version + `                                          ║
-║     Modules: Feroxbuster + Dirsearch + Crawling           ║
+║     Modules: Feroxbuster + Dirsearch + FFUF + Crawling    ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 `
@@ -253,7 +253,8 @@ func printHelp() {
 	fmt.Println("\nModules:")
 	fmt.Println("  1. Feroxbuster - Fast directory/file bruteforcing")
 	fmt.Println("  2. Dirsearch   - Advanced path fuzzing with multiple extensions")
-	fmt.Println("  3. Crawling    - Web crawling & URL discovery (Katana, Hakrawler, GAU)")
+	fmt.Println("  3. FFUF        - Fast web fuzzer with custom extensions")
+	fmt.Println("  4. Crawling    - Web crawling & URL discovery (Katana, Hakrawler, GAU)")
 	fmt.Println("\nConfiguration:")
 	fmt.Println("  Edit 'config.yaml' to customize:")
 	fmt.Println("    - Wordlists")
@@ -263,12 +264,11 @@ func printHelp() {
 	fmt.Println("    - Enable/disable modules")
 	fmt.Println("    - Output file names")
 	fmt.Println("\nOutput:")
-	fmt.Println("  Results are saved to ./fuzzing-output/ by default, or to the")
-	fmt.Println("  directory specified with the -o flag:")
-	fmt.Println("    - feroxbuster.txt     - Feroxbuster results (all targets, single file)")
-	fmt.Println("    - dirsearch.txt       - Dirsearch results (all targets, single file)")
-	fmt.Println("    - crawling-result.txt - Crawling results (all targets, single file)")
-	fmt.Println("\n  Example: subdomain-recon -l subs.txt -o /root/target/output")
+	fmt.Println("  Results are saved to ./fuzzing-output/ directory:")
+	fmt.Println("    - feroxbuster.txt     - Feroxbuster results (all targets)")
+	fmt.Println("    - dirsearch.txt       - Dirsearch results (all targets)")
+	fmt.Println("    - ffuf.txt            - FFUF results (all targets)")
+	fmt.Println("    - crawling-result.txt - Crawling results (live URLs only, all targets)")
 	fmt.Println("\nFor more information, see README.md")
 }
 
@@ -281,6 +281,7 @@ func printConfig(cfg *config.Config) {
 	fmt.Println("\n[Enabled Modules]")
 	fmt.Printf("  Feroxbuster:  %v\n", cfg.EnableModules["feroxbuster"])
 	fmt.Printf("  Dirsearch:    %v\n", cfg.EnableModules["dirsearch"])
+	fmt.Printf("  FFUF:         %v\n", cfg.EnableModules["ffuf"])
 	fmt.Printf("  Crawling:     %v\n", cfg.EnableModules["crawling"])
 
 	if cfg.EnableModules["feroxbuster"] {
@@ -304,6 +305,16 @@ func printConfig(cfg *config.Config) {
 		fmt.Printf("  Status Codes: %s\n", dsCfg.StatusCodes)
 		fmt.Printf("  Threads:      %d\n", dsCfg.Threads)
 		fmt.Printf("  Output:       %s\n", dsCfg.OutputFile)
+	}
+
+	if cfg.EnableModules["ffuf"] {
+		ffufCfg := cfg.NewFfufConfig()
+		fmt.Println("\n[FFUF Settings]")
+		fmt.Printf("  Wordlist:     %s\n", ffufCfg.Wordlist)
+		fmt.Printf("  Status Codes: %s\n", ffufCfg.StatusCodes)
+		fmt.Printf("  Extensions:   %s\n", ffufCfg.Extensions)
+		fmt.Printf("  Threads:      %d\n", ffufCfg.Threads)
+		fmt.Printf("  Output:       %s\n", ffufCfg.OutputFile)
 	}
 
 	if cfg.EnableModules["crawling"] {
@@ -355,7 +366,22 @@ func runModules(cfg *config.Config) bool {
 		}
 	}
 
-	// Module 3: Web Crawling
+	// Module 3: FFUF
+	if cfg.EnableModules["ffuf"] {
+		moduleCount++
+		ffuf := modules.NewFfuf(cfg)
+		err := ffuf.Run()
+		if err != nil {
+			failCount++
+			utils.WarningLogger.Printf("FFUF module completed with errors: %v", err)
+		} else {
+			successCount++
+			outputPath, _ := ffuf.GetOutputPath()
+			utils.SuccessLogger.Printf("FFUF results: %s", outputPath)
+		}
+	}
+
+	// Module 4: Web Crawling
 	if cfg.EnableModules["crawling"] {
 		moduleCount++
 		crawling := modules.NewCrawling(cfg)

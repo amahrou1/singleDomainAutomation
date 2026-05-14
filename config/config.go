@@ -20,6 +20,7 @@ type YAMLConfig struct {
 	Modules struct {
 		Feroxbuster bool `yaml:"feroxbuster"`
 		Dirsearch   bool `yaml:"dirsearch"`
+		Ffuf        bool `yaml:"ffuf"`
 		Crawling    bool `yaml:"crawling"`
 	} `yaml:"modules"`
 
@@ -42,6 +43,16 @@ type YAMLConfig struct {
 		Recursive   bool     `yaml:"recursive"`
 		Threads     int      `yaml:"threads"`
 	} `yaml:"dirsearch"`
+
+	Ffuf struct {
+		Wordlist       string   `yaml:"wordlist"`
+		StatusCodes    []int    `yaml:"status_codes"`
+		Extensions     []string `yaml:"extensions"`
+		OutputFile     string   `yaml:"output_file"`
+		Threads        int      `yaml:"threads"`
+		Recursion      bool     `yaml:"recursion"`
+		RecursionDepth int      `yaml:"recursion_depth"`
+	} `yaml:"ffuf"`
 
 	Crawling struct {
 		OutputFile string `yaml:"output_file"`
@@ -141,6 +152,7 @@ func LoadConfig(target string, configPath string, outputDirOverride string, time
 		EnableModules: map[string]bool{
 			"feroxbuster": yamlConfig.Modules.Feroxbuster,
 			"dirsearch":   yamlConfig.Modules.Dirsearch,
+			"ffuf":        yamlConfig.Modules.Ffuf,
 			"crawling":    yamlConfig.Modules.Crawling,
 		},
 	}
@@ -205,6 +217,36 @@ func (c *Config) NewDirsearchConfig() *DirsearchConfig {
 		FullURL:     c.YAMLConfig.Dirsearch.FullURL,
 		Recursive:   c.YAMLConfig.Dirsearch.Recursive,
 		Threads:     c.YAMLConfig.Dirsearch.Threads,
+	}
+}
+
+// FfufConfig holds configuration specific to FFUF
+type FfufConfig struct {
+	Wordlist       string
+	StatusCodes    []string
+	Extensions     []string
+	OutputFile     string
+	Threads        int
+	Recursion      bool
+	RecursionDepth int
+}
+
+// NewFfufConfig returns ffuf config from YAML
+func (c *Config) NewFfufConfig() *FfufConfig {
+	// Convert int status codes to strings
+	statusCodes := make([]string, len(c.YAMLConfig.Ffuf.StatusCodes))
+	for i, code := range c.YAMLConfig.Ffuf.StatusCodes {
+		statusCodes[i] = fmt.Sprintf("%d", code)
+	}
+
+	return &FfufConfig{
+		Wordlist:       c.YAMLConfig.Ffuf.Wordlist,
+		StatusCodes:    statusCodes,
+		Extensions:     c.YAMLConfig.Ffuf.Extensions,
+		OutputFile:     c.OutputDir + "/" + c.YAMLConfig.Ffuf.OutputFile,
+		Threads:        c.YAMLConfig.Ffuf.Threads,
+		Recursion:      c.YAMLConfig.Ffuf.Recursion,
+		RecursionDepth: c.YAMLConfig.Ffuf.RecursionDepth,
 	}
 }
 

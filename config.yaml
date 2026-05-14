@@ -10,6 +10,7 @@ general:
 modules:
   feroxbuster: true               # Enable/disable feroxbuster content discovery
   dirsearch: true                 # Enable/disable dirsearch fuzzing
+  ffuf: true                      # Enable/disable ffuf fuzzing
   crawling: true                  # Enable/disable web crawling & URL discovery
 
 # Feroxbuster Configuration
@@ -114,6 +115,26 @@ dirsearch:
   full_url: true                  # Show full URLs in output (--full-url)
   recursive: true                 # Follow redirects (-r flag)
   threads: 30                     # Number of threads
+
+# FFUF Configuration
+ffuf:
+  wordlist: "/root/SecLists/Discovery/Web-Content/raft-medium-directories.txt"
+  status_codes:
+    - 200
+  extensions:
+    - md
+    - db
+    - txt
+    - xml
+    - sql
+    - 7z
+    - zip
+    - tar.gz
+    - env
+  output_file: "ffuf.txt"
+  threads: 40                     # Number of threads
+  recursion: false                # Enable recursion
+  recursion_depth: 0              # Recursion depth (0 = disabled)
 
 # Web Crawling Configuration
 crawling:

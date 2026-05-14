@@ -271,14 +271,10 @@ func (c *Crawling) runHakrawler(ctx context.Context) error {
 
 	outputFile := c.tempDir + "/hakrawler.txt"
 
-	// hakrawler expects input from stdin
-	cmd := exec.CommandContext(ctx, "hakrawler", "-d", "3", "-plain")
-
-	// Create pipe for stdin
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return err
-	}
+	// Use echo command to pipe target into hakrawler
+	// This is more reliable than using StdinPipe
+	cmdStr := fmt.Sprintf("echo '%s' | hakrawler -d 3 -plain", c.config.Target)
+	cmd := exec.CommandContext(ctx, "bash", "-c", cmdStr)
 
 	// Create output file
 	outFile, err := os.Create(outputFile)
@@ -290,17 +286,8 @@ func (c *Crawling) runHakrawler(ctx context.Context) error {
 	cmd.Stdout = outFile
 	cmd.Stderr = os.Stderr
 
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	// Write target to stdin
-	fmt.Fprintln(stdin, c.config.Target)
-	stdin.Close()
-
-	// Wait for command to finish
-	return cmd.Wait()
+	// Run the command
+	return cmd.Run()
 }
 
 // runGAU executes GAU under the shared module context.
