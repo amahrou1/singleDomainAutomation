@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,14 @@ import (
 	"subdomain-recon/config"
 	"subdomain-recon/utils"
 )
+
+// FfufResult represents the JSON output structure from ffuf
+type FfufResult struct {
+	Results []struct {
+		URL        string `json:"url"`
+		StatusCode int    `json:"status"`
+	} `json:"results"`
+}
 
 // Ffuf represents the ffuf fuzzing module
 type Ffuf struct {
@@ -69,32 +78,39 @@ func (ff *Ffuf) runFfuf() error {
 	// Write target header to output file
 	ff.writeTargetHeader()
 
+	// Normalize target URL (add scheme, remove trailing slash)
+	normalizedTarget := config.NormalizeTargetURL(ff.config.Target)
+
 	// Create temp output file for this target
 	tempFile := ff.ffufConfig.OutputFile + ".temp"
+	defer os.Remove(tempFile) // Clean up temp file
+
+	// Build extensions with leading dots
+	var extensionArg string
+	if len(ff.ffufConfig.Extensions) > 0 {
+		extList := make([]string, len(ff.ffufConfig.Extensions))
+		for i, ext := range ff.ffufConfig.Extensions {
+			if !strings.HasPrefix(ext, ".") {
+				extList[i] = "." + ext
+			} else {
+				extList[i] = ext
+			}
+		}
+		extensionArg = strings.Join(extList, ",")
+	}
 
 	// Build the command arguments
 	args := []string{
-		"-u", ff.config.Target + "/FUZZ",
 		"-w", ff.ffufConfig.Wordlist,
+		"-u", normalizedTarget + "/FUZZ",
 		"-mc", strings.Join(ff.ffufConfig.StatusCodes, ","),
-		"-t", fmt.Sprintf("%d", ff.ffufConfig.Threads),
 		"-o", tempFile,
-		"-of", "json", // JSON output for temp file
-		"-s",          // Silent mode
+		"-of", "json",
 	}
 
 	// Add extensions if specified
-	if len(ff.ffufConfig.Extensions) > 0 {
-		extensions := "." + strings.Join(ff.ffufConfig.Extensions, ",.")
-		args = append(args, "-e", extensions)
-	}
-
-	// Add recursion if enabled
-	if ff.ffufConfig.Recursion {
-		args = append(args, "-recursion")
-		if ff.ffufConfig.RecursionDepth > 0 {
-			args = append(args, "-recursion-depth", fmt.Sprintf("%d", ff.ffufConfig.RecursionDepth))
-		}
+	if extensionArg != "" {
+		args = append(args, "-e", extensionArg)
 	}
 
 	utils.InfoLogger.Printf("Running: ffuf %s", strings.Join(args, " "))
@@ -102,46 +118,50 @@ func (ff *Ffuf) runFfuf() error {
 	// Create the command with context
 	cmd := exec.CommandContext(ctx, "ffuf", args...)
 
-	// Set output to stdout only
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// Capture stderr for diagnostics
+	var stderrBuf strings.Builder
+	cmd.Stderr = &stderrBuf
 
 	// Run the command
 	err := cmd.Run()
-
-	// Append temp file results to main output file
-	defer os.Remove(tempFile) // Clean up temp file
+	exitCode := 0
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		exitCode = exitErr.ExitCode()
+	}
 
 	// Check if context deadline exceeded (timeout)
 	if ctx.Err() == context.DeadlineExceeded {
 		utils.WarningLogger.Printf("ffuf timed out after %s", ff.config.Timeout)
-		// Try to append partial results if they exist
-		if ff.appendTempToMain(tempFile) {
-			utils.InfoLogger.Printf("Partial results appended to %s", ff.ffufConfig.OutputFile)
+		resultCount := ff.parseAndAppendResults(tempFile)
+		if resultCount >= 0 {
+			utils.InfoLogger.Printf("Partial results appended: %d URLs", resultCount)
 			return nil
 		}
 		return fmt.Errorf("ffuf timed out after %s with no results", ff.config.Timeout)
 	}
 
-	// Check for other errors
-	if err != nil {
-		// Try to append results even if there was an error
-		if ff.appendTempToMain(tempFile) {
-			utils.WarningLogger.Printf("ffuf encountered an error but produced output: %v", err)
-			return nil // Don't fail the module if we have output
+	// Check for command errors
+	if err != nil && exitCode != 0 {
+		stderr := stderrBuf.String()
+		utils.WarningLogger.Printf("ffuf exited with code %d: %v", exitCode, err)
+		if stderr != "" {
+			utils.WarningLogger.Printf("ffuf stderr: %s", stderr)
 		}
-		return fmt.Errorf("ffuf failed: %v", err)
+		// Try to salvage any results
+		resultCount := ff.parseAndAppendResults(tempFile)
+		if resultCount > 0 {
+			utils.WarningLogger.Printf("ffuf encountered an error but produced %d results", resultCount)
+			return nil
+		}
+		return fmt.Errorf("ffuf failed (exit %d): %v", exitCode, err)
 	}
 
-	// Append temp file to main output file
-	if !ff.appendTempToMain(tempFile) {
-		return fmt.Errorf("ffuf completed but no output file was generated")
-	}
-
-	// Get file info
-	fileInfo, err := os.Stat(ff.ffufConfig.OutputFile)
-	if err == nil {
-		utils.SuccessLogger.Printf("Output appended to: %s (Total size: %d bytes)", ff.ffufConfig.OutputFile, fileInfo.Size())
+	// Parse and append results (zero results is success)
+	resultCount := ff.parseAndAppendResults(tempFile)
+	if resultCount == 0 {
+		utils.InfoLogger.Printf("ffuf completed: 0 results for %s", normalizedTarget)
+	} else {
+		utils.SuccessLogger.Printf("ffuf completed: %d results for %s", resultCount, normalizedTarget)
 	}
 
 	return nil
@@ -164,36 +184,42 @@ func (ff *Ffuf) writeTargetHeader() error {
 	return err
 }
 
-// appendTempToMain appends the temporary file content to the main output file
-func (ff *Ffuf) appendTempToMain(tempFile string) bool {
-	// Check if temp file exists and has content
-	tempInfo, err := os.Stat(tempFile)
-	if err != nil || tempInfo.Size() == 0 {
-		return false
-	}
-
-	// Read temp file
-	tempContent, err := os.ReadFile(tempFile)
+// parseAndAppendResults parses the JSON output and appends human-readable results
+// Returns the number of results found, or -1 on parse error
+func (ff *Ffuf) parseAndAppendResults(tempFile string) int {
+	// Check if temp file exists
+	data, err := os.ReadFile(tempFile)
 	if err != nil {
-		return false
+		return -1
 	}
 
-	// Append to main file
+	// Parse JSON
+	var result FfufResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		// If JSON parse fails, return -1 but don't crash
+		return -1
+	}
+
+	// Open main output file for appending
 	f, err := os.OpenFile(ff.ffufConfig.OutputFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return false
+		return -1
 	}
 	defer f.Close()
 
-	_, err = f.Write(tempContent)
-	if err != nil {
-		return false
+	// Write human-readable results
+	if len(result.Results) == 0 {
+		f.WriteString("(no results)\n")
+		return 0
 	}
 
-	// Add a newline separator after the results
+	for _, r := range result.Results {
+		line := fmt.Sprintf("[%d] %s\n", r.StatusCode, r.URL)
+		f.WriteString(line)
+	}
 	f.WriteString("\n")
 
-	return true
+	return len(result.Results)
 }
 
 // GetName returns the module name

@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -73,41 +72,18 @@ type Config struct {
 	YAMLConfig    *YAMLConfig
 }
 
-// extractSubdomain extracts the subdomain/hostname from a URL and includes port if non-standard
-func extractSubdomain(targetURL string) (string, error) {
+// NormalizeTargetURL ensures the target has a scheme and no trailing slash
+// Returns normalized URL suitable for fuzzing (e.g., https://example.com)
+func NormalizeTargetURL(targetURL string) string {
 	// Add scheme if missing
 	if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
 		targetURL = "https://" + targetURL
 	}
 
-	// Parse URL
-	parsedURL, err := url.Parse(targetURL)
-	if err != nil {
-		return "", fmt.Errorf("invalid URL: %v", err)
-	}
+	// Remove trailing slash
+	targetURL = strings.TrimSuffix(targetURL, "/")
 
-	// Get hostname (subdomain.domain.com or IP)
-	hostname := parsedURL.Hostname()
-	if hostname == "" {
-		return "", fmt.Errorf("could not extract hostname from URL")
-	}
-
-	// Get port
-	port := parsedURL.Port()
-
-	// Include port in directory name if it's non-standard
-	// Standard ports: 80 for http, 443 for https
-	if port != "" {
-		scheme := parsedURL.Scheme
-		isStandardPort := (scheme == "http" && port == "80") || (scheme == "https" && port == "443")
-
-		if !isStandardPort {
-			// Replace colon with underscore to avoid filesystem issues
-			hostname = hostname + "_" + port
-		}
-	}
-
-	return hostname, nil
+	return targetURL
 }
 
 // LoadConfig loads configuration from config.yaml and merges with target
@@ -135,12 +111,15 @@ func LoadConfig(target string, configPath string, outputDirOverride string, time
 		timeout = timeoutOverride
 	}
 
-	// Determine output directory:
+	// Determine output directory with precedence:
 	//   1. CLI override (-o flag) takes precedence
-	//   2. Fall back to the default single output directory
+	//   2. config.yaml output_dir
+	//   3. Default ./fuzzing-output
 	outputDir := "./fuzzing-output"
 	if outputDirOverride != "" {
 		outputDir = outputDirOverride
+	} else if yamlConfig.General.OutputDir != "" {
+		outputDir = yamlConfig.General.OutputDir
 	}
 
 	// Create config

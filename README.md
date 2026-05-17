@@ -276,7 +276,7 @@ subdomain-recon -v
 
 ## 📊 Output
 
-All results are saved to the `./fuzzing-output/` directory:
+Results are saved to the output directory with precedence: CLI `-o` flag > `output_dir` in config.yaml > default `./fuzzing-output/`.
 
 ```
 fuzzing-output/

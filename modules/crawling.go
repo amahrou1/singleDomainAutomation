@@ -271,10 +271,15 @@ func (c *Crawling) runHakrawler(ctx context.Context) error {
 
 	outputFile := c.tempDir + "/hakrawler.txt"
 
-	// Use echo command to pipe target into hakrawler
-	// This is more reliable than using StdinPipe
-	cmdStr := fmt.Sprintf("echo '%s' | hakrawler -d 3 -plain", c.config.Target)
-	cmd := exec.CommandContext(ctx, "bash", "-c", cmdStr)
+	// Build command without invalid -plain flag
+	args := []string{"-d", "3"}
+
+	utils.InfoLogger.Printf("Running: hakrawler %s", strings.Join(args, " "))
+
+	cmd := exec.CommandContext(ctx, "hakrawler", args...)
+
+	// Feed target via stdin
+	cmd.Stdin = strings.NewReader(c.config.Target + "\n")
 
 	// Create output file
 	outFile, err := os.Create(outputFile)
